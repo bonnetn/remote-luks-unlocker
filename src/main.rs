@@ -1,17 +1,22 @@
 use std::{
     env,
-    fs::{self, OpenOptions},
-    io::Write,
-    net::{SocketAddr, TcpStream, ToSocketAddrs},
+    fs::Permissions,
+    net::SocketAddr,
     os::unix::fs::PermissionsExt,
-    path::PathBuf,
-    process::{Command, Stdio},
-    thread,
+    path::{Path, PathBuf},
+    process::Stdio,
     time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use tokio::{
+    fs::{self, OpenOptions},
+    io::AsyncWriteExt,
+    net::{TcpStream, lookup_host},
+    process::Command,
+    time::{sleep, timeout},
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,21 +72,25 @@ struct Args {
     command: String,
 }
 
-fn main() -> Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<()> {
     let args = Args::parse();
-    let ssh = find_ssh().context("OpenSSH is required but the `ssh` binary was not found")?;
-    let endpoint = resolve_endpoint(&args.host, args.port)?;
-    let askpass = Askpass::new(&args.password)?;
+    let ssh = find_ssh()
+        .await
+        .context("OpenSSH is required but the `ssh` binary was not found")?;
+    let endpoint = resolve_endpoint(&args.host, args.port).await?;
+    let askpass = Askpass::new(&args.password).await?;
 
-    poll_until_connected(&args, &ssh, &endpoint, &askpass)
+    let result = poll_until_connected(&args, &ssh, &endpoint, &askpass).await;
+    let cleanup_result = askpass.cleanup().await;
+    result.and(cleanup_result)
 }
 
-fn find_ssh() -> Result<PathBuf> {
+async fn find_ssh() -> Result<PathBuf> {
     let path = env::var_os("PATH").unwrap_or_default();
     for directory in env::split_paths(&path) {
         let candidate = directory.join("ssh");
-        if candidate.is_file() {
-            let metadata = fs::metadata(&candidate)?;
+        if let Ok(metadata) = fs::metadata(&candidate).await {
             if metadata.permissions().mode() & 0o111 != 0 {
                 return Ok(candidate);
             }
@@ -91,22 +100,22 @@ fn find_ssh() -> Result<PathBuf> {
     bail!("ssh binary is not installed or is not executable")
 }
 
-fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
-    (host, port)
-        .to_socket_addrs()
+async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    lookup_host((host, port))
+        .await
         .with_context(|| format!("could not resolve {host}:{port}"))
         .map(|addresses| addresses.collect())
 }
 
-fn poll_until_connected(
+async fn poll_until_connected(
     args: &Args,
-    ssh: &PathBuf,
+    ssh: &Path,
     endpoint: &[SocketAddr],
     askpass: &Askpass,
 ) -> Result<()> {
-    let timeout = Duration::from_secs(args.wait_seconds);
+    let timeout_duration = Duration::from_secs(args.wait_seconds);
     let interval = Duration::from_secs(args.interval_seconds);
-    let deadline = Instant::now() + timeout;
+    let deadline = Instant::now() + timeout_duration;
     let target = format!("{}@{}", args.user, args.host);
     let mut last_error = None;
 
@@ -115,7 +124,7 @@ fn poll_until_connected(
             break;
         }
 
-        if port_is_open(endpoint) {
+        if port_is_open(endpoint).await {
             match connect_and_run(
                 ssh,
                 &target,
@@ -124,7 +133,9 @@ fn poll_until_connected(
                 args.identity_file.as_deref(),
                 args.known_hosts.as_deref(),
                 askpass,
-            ) {
+            )
+            .await
+            {
                 Ok(()) => return Ok(()),
                 Err(error) => last_error = Some(error),
             }
@@ -134,7 +145,7 @@ fn poll_until_connected(
         if remaining.is_zero() {
             break;
         }
-        thread::sleep(interval.min(remaining));
+        sleep(interval.min(remaining)).await;
     }
 
     match last_error {
@@ -143,25 +154,30 @@ fn poll_until_connected(
     }
 }
 
-fn port_is_open(endpoint: &[SocketAddr]) -> bool {
-    endpoint
-        .iter()
-        .any(|address| TcpStream::connect_timeout(address, Duration::from_secs(1)).is_ok())
+async fn port_is_open(endpoint: &[SocketAddr]) -> bool {
+    for address in endpoint {
+        if timeout(Duration::from_secs(1), TcpStream::connect(address))
+            .await
+            .is_ok_and(|result| result.is_ok())
+        {
+            return true;
+        }
+    }
+    false
 }
 
-fn connect_and_run(
-    ssh: &PathBuf,
+async fn connect_and_run(
+    ssh: &Path,
     target: &str,
     port: u16,
     command: &str,
-    identity_file: Option<&std::path::Path>,
-    known_hosts: Option<&std::path::Path>,
+    identity_file: Option<&Path>,
+    known_hosts: Option<&Path>,
     askpass: &Askpass,
 ) -> Result<()> {
-    let port = port.to_string();
     let mut arguments = vec![
         "-p".to_owned(),
-        port,
+        port.to_string(),
         "-o".to_owned(),
         "BatchMode=no".to_owned(),
         "-o".to_owned(),
@@ -221,11 +237,13 @@ fn connect_and_run(
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(askpass.password.as_bytes())
+            .await
             .context("failed to send the password to the SSH command")?;
-        stdin.write_all(b"\n")?;
+        stdin.write_all(b"\n").await?;
     }
     let status = child
         .wait()
+        .await
         .with_context(|| format!("failed waiting for {}", ssh.display()))?;
 
     if status.success() {
@@ -241,7 +259,7 @@ struct Askpass {
 }
 
 impl Askpass {
-    fn new(password: &str) -> Result<Self> {
+    async fn new(password: &str) -> Result<Self> {
         let path = env::temp_dir().join(format!(
             "remote-luks-unlocker-askpass-{}",
             std::process::id()
@@ -251,19 +269,20 @@ impl Askpass {
             .write(true)
             .create_new(true)
             .open(&path)
+            .await
             .with_context(|| format!("could not create askpass helper {}", path.display()))?;
-        file.write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))?;
+        file.write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")
+            .await?;
+        fs::set_permissions(&path, Permissions::from_mode(0o700)).await?;
 
         Ok(Self {
             path,
             password: password.to_owned(),
         })
     }
-}
 
-impl Drop for Askpass {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+    async fn cleanup(self) -> Result<()> {
+        fs::remove_file(&self.path).await.ok();
+        Ok(())
     }
 }
