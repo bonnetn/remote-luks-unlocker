@@ -30,6 +30,17 @@ starts the fixture, runs the polling client against it, and cleans up the
 container and generated volume afterward. It requires Podman with privileged
 loop-device and device-mapper support.
 
+On macOS, prepare a dedicated rootful Podman VM with:
+
+```sh
+make setup-podman-vm
+cargo test
+```
+
+The setup creates or reconfigures a VM named `remote-luks-unlocker`, loads the
+Linux `dm_mod` module, and selects its rootful Podman connection as default.
+Override the name with `PODMAN_MACHINE_NAME` if needed.
+
 ## Run the fixture
 
 Requirements: Podman, `ssh-keygen`, and a Podman runtime capable of running a

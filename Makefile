@@ -1,4 +1,7 @@
-.PHONY: test-server test-connection stop-test-server clean-test-data
+.PHONY: setup-podman-vm test-server test-connection stop-test-server clean-test-data
+
+setup-podman-vm:
+	$(MAKE) -C tests/fixtures/dropbear-luks setup-podman-vm
 
 test-server:
 	$(MAKE) -C tests/fixtures/dropbear-luks test-server
