@@ -1,5 +1,6 @@
 use std::{
     env,
+    io::ErrorKind,
     net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -19,7 +20,7 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(
     author,
     version,
@@ -100,11 +101,12 @@ async fn find_ssh() -> Result<PathBuf> {
     let path = env::var_os("PATH").unwrap_or_default();
     for directory in env::split_paths(&path) {
         let candidate = directory.join("ssh");
-        if let Ok(metadata) = fs::metadata(&candidate).await {
-            if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
-                debug!(path = %candidate.display(), "found executable SSH candidate");
-                return Ok(candidate);
-            }
+        if let Ok(metadata) = fs::metadata(&candidate).await
+            && metadata.is_file()
+            && metadata.permissions().mode() & 0o111 != 0
+        {
+            debug!(path = %candidate.display(), "found executable SSH candidate");
+            return Ok(candidate);
         }
     }
 
@@ -190,7 +192,7 @@ async fn connect_and_run(
     known_hosts: Option<&Path>,
     askpass: &Askpass,
 ) -> Result<()> {
-    debug!(target, command, "starting SSH child process");
+    debug!(target, "starting SSH child process");
     let mut arguments = vec![
         "-p".to_owned(),
         port.to_string(),
@@ -297,8 +299,14 @@ impl Askpass {
             .open(&path)
             .await
             .with_context(|| format!("could not create askpass helper {}", path.display()))?;
-        file.write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")
-            .await?;
+        if let Err(error) = file
+            .write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")
+            .await
+        {
+            fs::remove_file(&path).await.ok();
+            return Err(error)
+                .with_context(|| format!("could not write askpass helper {}", path.display()));
+        }
         debug!(path = %path.display(), "created private SSH askpass helper");
         Ok(Self {
             path,
@@ -307,8 +315,15 @@ impl Askpass {
     }
 
     async fn cleanup(self) -> Result<()> {
-        fs::remove_file(&self.path).await.ok();
-        debug!(path = %self.path.display(), "removed SSH askpass helper");
-        Ok(())
+        match fs::remove_file(&self.path).await {
+            Ok(()) => {
+                debug!(path = %self.path.display(), "removed SSH askpass helper");
+                Ok(())
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error).with_context(|| {
+                format!("could not remove askpass helper {}", self.path.display())
+            }),
+        }
     }
 }
