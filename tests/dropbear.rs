@@ -142,4 +142,8 @@ fn polling_client_authenticates_to_dropbear_fixture() {
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
+
+    let state = fs::read_to_string(data_dir.join("state/state"))
+        .expect("fixture did not write its unlock state");
+    assert_eq!(state.trim(), "UNLOCKED", "remote password was not accepted");
 }
