@@ -1,0 +1,18 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        cryptsetup \
+        dropbear \
+        e2fsprogs \
+        openssh-client \
+        util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY container/entrypoint.sh /usr/local/sbin/dropbear-luks-entrypoint
+COPY container/unlock-luks /usr/local/bin/unlock-luks
+RUN chmod 0755 /usr/local/sbin/dropbear-luks-entrypoint /usr/local/bin/unlock-luks \
+    && mkdir -p /etc/dropbear /var/lib/luks-test /run/test
+
+EXPOSE 22
+ENTRYPOINT ["/usr/local/sbin/dropbear-luks-entrypoint"]
