@@ -19,9 +19,24 @@ cargo run -- \
   --interval-seconds 1
 ```
 
-`REMOTE_LUKS_PASSWORD` may be used instead of `--password`. The password is
-provided to OpenSSH through its askpass mechanism and is not added to the SSH
-argument list.
+Every option can be supplied through an environment variable using the
+`REMOTE_LUKS_*` names shown by `--help`; for example:
+
+```sh
+export REMOTE_LUKS_HOST=127.0.0.1
+export REMOTE_LUKS_PORT=2222
+export REMOTE_LUKS_USER=root
+export REMOTE_LUKS_PASSWORD='test-passphrase'
+export REMOTE_LUKS_IDENTITY_FILE="$HOME/.ssh/id_ed25519"
+export REMOTE_LUKS_COMMAND='unlock-luks unlock'
+cargo run
+```
+
+Explicit CLI arguments take precedence over environment variables. The
+identity-file value is the private key; its matching `.pub` key must be
+authorized on the remote Dropbear server. The password is provided to OpenSSH
+through its askpass mechanism and to the remote command on standard input; it
+is not added to the SSH argument list.
 
 ## Run tests
 

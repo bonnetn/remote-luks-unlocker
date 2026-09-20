@@ -21,31 +21,45 @@ use clap::Parser;
 )]
 struct Args {
     /// Hostname or IP address of the machine running Dropbear/OpenSSH.
-    #[arg(long)]
+    #[arg(long, env = "REMOTE_LUKS_HOST")]
     host: String,
 
     /// SSH port.
-    #[arg(short = 'P', long, default_value_t = 22)]
+    #[arg(short = 'P', long, env = "REMOTE_LUKS_PORT", default_value_t = 22)]
     port: u16,
 
     /// SSH username.
-    #[arg(short, long)]
+    #[arg(short, long, env = "REMOTE_LUKS_USER")]
     user: String,
 
     /// SSH password. REMOTE_LUKS_PASSWORD can be used instead.
     #[arg(short, long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
     password: String,
 
+    /// Private SSH identity file whose public key is authorized on the server.
+    #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
+    identity_file: Option<PathBuf>,
+
     /// Maximum time to wait for the SSH port and a successful login.
-    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_WAIT_SECONDS",
+        default_value_t = 60,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
     wait_seconds: u64,
 
     /// Seconds between port checks and login attempts.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_INTERVAL_SECONDS",
+        default_value_t = 1,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
     interval_seconds: u64,
 
     /// Remote command to run after authentication.
-    #[arg(long, default_value = "true")]
+    #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "true")]
     command: String,
 }
 
@@ -98,7 +112,14 @@ fn poll_until_connected(
         }
 
         if port_is_open(endpoint) {
-            match connect_and_run(ssh, &target, args.port, &args.command, askpass) {
+            match connect_and_run(
+                ssh,
+                &target,
+                args.port,
+                &args.command,
+                args.identity_file.as_deref(),
+                askpass,
+            ) {
                 Ok(()) => return Ok(()),
                 Err(error) => last_error = Some(error),
             }
@@ -128,32 +149,49 @@ fn connect_and_run(
     target: &str,
     port: u16,
     command: &str,
+    identity_file: Option<&std::path::Path>,
     askpass: &Askpass,
 ) -> Result<()> {
     let port = port.to_string();
+    let mut arguments = vec![
+        "-p".to_owned(),
+        port,
+        "-o".to_owned(),
+        "BatchMode=no".to_owned(),
+        "-o".to_owned(),
+        "NumberOfPasswordPrompts=1".to_owned(),
+        "-o".to_owned(),
+        "KbdInteractiveAuthentication=no".to_owned(),
+        "-o".to_owned(),
+        "StrictHostKeyChecking=no".to_owned(),
+        "-o".to_owned(),
+        "UserKnownHostsFile=/dev/null".to_owned(),
+        "-o".to_owned(),
+        "ConnectTimeout=2".to_owned(),
+    ];
+    if let Some(identity_file) = identity_file {
+        arguments.extend([
+            "-i".to_owned(),
+            identity_file.to_string_lossy().into_owned(),
+            "-o".to_owned(),
+            "IdentitiesOnly=yes".to_owned(),
+            "-o".to_owned(),
+            "PreferredAuthentications=publickey,password".to_owned(),
+            "-o".to_owned(),
+            "PubkeyAuthentication=yes".to_owned(),
+        ]);
+    } else {
+        arguments.extend([
+            "-o".to_owned(),
+            "PreferredAuthentications=password".to_owned(),
+            "-o".to_owned(),
+            "PubkeyAuthentication=no".to_owned(),
+        ]);
+    }
+    arguments.extend([target.to_owned(), command.to_owned()]);
+
     let mut child = Command::new(ssh)
-        .args([
-            "-p",
-            &port,
-            "-o",
-            "BatchMode=no",
-            "-o",
-            "NumberOfPasswordPrompts=1",
-            "-o",
-            "PreferredAuthentications=password",
-            "-o",
-            "PubkeyAuthentication=no",
-            "-o",
-            "KbdInteractiveAuthentication=no",
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-            "-o",
-            "ConnectTimeout=2",
-            target,
-            command,
-        ])
+        .args(arguments)
         .env("SSH_ASKPASS", &askpass.path)
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env("REMOTE_LUKS_PASSWORD", &askpass.password)

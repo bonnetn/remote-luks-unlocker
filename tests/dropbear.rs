@@ -89,6 +89,7 @@ fn polling_client_authenticates_to_dropbear_fixture() {
         .expect("failed to inspect the test port")
         .port();
     drop(listener);
+    let identity_file = data_dir.join("ssh/id_ed25519");
     let fixture = FixtureGuard {
         fixture_dir: &fixture_dir,
         data_dir: data_dir.clone(),
@@ -132,6 +133,8 @@ fn polling_client_authenticates_to_dropbear_fixture() {
             "--command",
             "unlock-luks unlock",
         ])
+        .arg("--identity-file")
+        .arg(&identity_file)
         .env("REMOTE_LUKS_PASSWORD", PASSWORD)
         .output()
         .expect("failed to execute the polling client");
