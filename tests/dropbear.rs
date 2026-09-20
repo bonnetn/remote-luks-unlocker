@@ -2,7 +2,7 @@ use std::{
     env, fs,
     net::TcpListener,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -81,7 +81,7 @@ impl Fixture {
         panic!("ssh-keyscan could not read the Dropbear host key");
     }
 
-    fn run_cli(&self, args: &[String], environment: &[(&str, &str)]) -> Output {
+    fn run_cli(&self, args: &[String], environment: &[(&str, &str)]) -> Option<Output> {
         let binary = env::var("CARGO_BIN_EXE_remote-luks-unlocker")
             .or_else(|_| env::var("CARGO_BIN_EXE_remote_luks_unlocker"))
             .expect("Cargo did not provide the polling binary path");
@@ -90,9 +90,32 @@ impl Fixture {
         for (name, value) in environment {
             command.env(name, value);
         }
-        command
-            .output()
-            .expect("failed to execute the polling client")
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to execute the polling client");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if child
+                .try_wait()
+                .expect("failed to poll the polling client")
+                .is_some()
+            {
+                return Some(
+                    child
+                        .wait_with_output()
+                        .expect("failed to collect polling client output"),
+                );
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().ok();
+                child.wait().ok();
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn common_args(&self) -> Vec<String> {
@@ -103,8 +126,6 @@ impl Fixture {
             self.port.to_string(),
             "--user".into(),
             "root".into(),
-            "--wait-seconds".into(),
-            "10".into(),
             "--interval-seconds".into(),
             "1".into(),
             "--command".into(),
@@ -186,7 +207,9 @@ fn password_authentication_with_cli_options() {
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
     args.extend(["--password".into(), PASSWORD.into()]);
-    let result = fixture.run_cli(&args, &[]);
+    let result = fixture
+        .run_cli(&args, &[])
+        .expect("polling client timed out");
     assert!(
         result.status.success(),
         "CLI password flow failed: {result:?}"
@@ -206,7 +229,9 @@ fn identity_and_host_key_with_cli_options() {
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
     ]);
-    let result = fixture.run_cli(&args, &[]);
+    let result = fixture
+        .run_cli(&args, &[])
+        .expect("polling client timed out");
     assert!(
         result.status.success(),
         "CLI key/host-key flow failed: {result:?}"
@@ -229,11 +254,12 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_PASSWORD", PASSWORD),
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
-        ("REMOTE_LUKS_WAIT_SECONDS", "10"),
         ("REMOTE_LUKS_INTERVAL_SECONDS", "1"),
         ("REMOTE_LUKS_COMMAND", "unlock-luks unlock"),
     ];
-    let result = fixture.run_cli(&[], &environment);
+    let result = fixture
+        .run_cli(&[], &environment)
+        .expect("polling client timed out");
     assert!(
         result.status.success(),
         "environment flow failed: {result:?}"
@@ -260,5 +286,8 @@ fn mismatched_host_key_is_rejected() {
         wrong_known_hosts.to_string_lossy().into_owned(),
     ]);
     let result = fixture.run_cli(&args, &[]);
-    assert!(!result.status.success(), "mismatched host key was accepted");
+    assert!(
+        result.is_none_or(|output| !output.status.success()),
+        "mismatched host key was accepted"
+    );
 }

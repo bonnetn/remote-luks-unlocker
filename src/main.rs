@@ -1,11 +1,10 @@
 use std::{
     env,
-    fs::Permissions,
     net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
@@ -17,6 +16,8 @@ use tokio::{
     process::Command,
     time::{sleep, timeout},
 };
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -49,15 +50,6 @@ struct Args {
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
     known_hosts: Option<PathBuf>,
 
-    /// Maximum time to wait for the SSH port and a successful login.
-    #[arg(
-        long,
-        env = "REMOTE_LUKS_WAIT_SECONDS",
-        default_value_t = 60,
-        value_parser = clap::value_parser!(u64).range(1..)
-    )]
-    wait_seconds: u64,
-
     /// Seconds between port checks and login attempts.
     #[arg(
         long,
@@ -74,16 +66,34 @@ struct Args {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    init_tracing();
     let args = Args::parse();
+    info!(host = %args.host, port = args.port, user = %args.user, "starting SSH polling client");
     let ssh = find_ssh()
         .await
         .context("OpenSSH is required but the `ssh` binary was not found")?;
-    let endpoint = resolve_endpoint(&args.host, args.port).await?;
+    info!(path = %ssh.display(), "found OpenSSH binary");
+    let endpoint = tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("received Ctrl+C while resolving SSH endpoint");
+            bail!("interrupted")
+        },
+        result = resolve_endpoint(&args.host, args.port) => result?,
+    };
+    debug!(addresses = ?endpoint, "resolved SSH endpoint");
     let askpass = Askpass::new(&args.password).await?;
 
     let result = poll_until_connected(&args, &ssh, &endpoint, &askpass).await;
     let cleanup_result = askpass.cleanup().await;
+    if let Err(error) = &result {
+        error!(error = %error, "SSH polling stopped with an error");
+    }
     result.and(cleanup_result)
+}
+
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
 async fn find_ssh() -> Result<PathBuf> {
@@ -91,7 +101,8 @@ async fn find_ssh() -> Result<PathBuf> {
     for directory in env::split_paths(&path) {
         let candidate = directory.join("ssh");
         if let Ok(metadata) = fs::metadata(&candidate).await {
-            if metadata.permissions().mode() & 0o111 != 0 {
+            if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
+                debug!(path = %candidate.display(), "found executable SSH candidate");
                 return Ok(candidate);
             }
         }
@@ -101,6 +112,7 @@ async fn find_ssh() -> Result<PathBuf> {
 }
 
 async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    debug!(host, port, "resolving SSH endpoint");
     lookup_host((host, port))
         .await
         .with_context(|| format!("could not resolve {host}:{port}"))
@@ -113,18 +125,19 @@ async fn poll_until_connected(
     endpoint: &[SocketAddr],
     askpass: &Askpass,
 ) -> Result<()> {
-    let timeout_duration = Duration::from_secs(args.wait_seconds);
     let interval = Duration::from_secs(args.interval_seconds);
-    let deadline = Instant::now() + timeout_duration;
     let target = format!("{}@{}", args.user, args.host);
-    let mut last_error = None;
 
     loop {
-        if Instant::now() >= deadline {
-            break;
-        }
-
-        if port_is_open(endpoint).await {
+        let port_open = tokio::select! {
+            _ = tokio::signal::ctrl_c() => bail!("interrupted"),
+            open = port_is_open(endpoint) => open,
+        };
+        if port_open {
+            debug!(
+                port = args.port,
+                "SSH port is open; attempting authentication"
+            );
             match connect_and_run(
                 ssh,
                 &target,
@@ -136,21 +149,23 @@ async fn poll_until_connected(
             )
             .await
             {
-                Ok(()) => return Ok(()),
-                Err(error) => last_error = Some(error),
+                Ok(()) => {
+                    info!("SSH authentication and remote command succeeded");
+                    return Ok(());
+                }
+                Err(error) => warn!(error = %error, "SSH attempt failed; will retry"),
             }
+        } else {
+            debug!("SSH port is not open; will retry");
         }
 
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("received Ctrl+C; stopping SSH polling");
+                bail!("interrupted")
+            },
+            _ = sleep(interval) => {},
         }
-        sleep(interval.min(remaining)).await;
-    }
-
-    match last_error {
-        Some(error) => Err(error).context("SSH did not become usable before the timeout"),
-        None => bail!("SSH port {} did not open before the timeout", args.port),
     }
 }
 
@@ -175,6 +190,7 @@ async fn connect_and_run(
     known_hosts: Option<&Path>,
     askpass: &Askpass,
 ) -> Result<()> {
+    debug!(target, command, "starting SSH child process");
     let mut arguments = vec![
         "-p".to_owned(),
         port.to_string(),
@@ -235,20 +251,29 @@ async fn connect_and_run(
         .with_context(|| format!("failed to execute {}", ssh.display()))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(askpass.password.as_bytes())
-            .await
-            .context("failed to send the password to the SSH command")?;
-        stdin.write_all(b"\n").await?;
+        if let Err(error) = stdin.write_all(askpass.password.as_bytes()).await {
+            child.kill().await.ok();
+            return Err(error).context("failed to send the password to the SSH command");
+        }
+        if let Err(error) = stdin.write_all(b"\n").await {
+            child.kill().await.ok();
+            return Err(error.into());
+        }
     }
-    let status = child
-        .wait()
-        .await
-        .with_context(|| format!("failed waiting for {}", ssh.display()))?;
+    let status = tokio::select! {
+        result = child.wait() => result
+            .with_context(|| format!("failed waiting for {}", ssh.display()))?,
+        _ = tokio::signal::ctrl_c() => {
+            info!("received Ctrl+C; terminating SSH child process");
+            child.kill().await.ok();
+            bail!("interrupted")
+        }
+    };
 
     if status.success() {
         Ok(())
     } else {
+        debug!(%status, "SSH child process failed");
         bail!("ssh exited with status {status}")
     }
 }
@@ -268,13 +293,13 @@ impl Askpass {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(0o700)
             .open(&path)
             .await
             .with_context(|| format!("could not create askpass helper {}", path.display()))?;
         file.write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")
             .await?;
-        fs::set_permissions(&path, Permissions::from_mode(0o700)).await?;
-
+        debug!(path = %path.display(), "created private SSH askpass helper");
         Ok(Self {
             path,
             password: password.to_owned(),
@@ -283,6 +308,7 @@ impl Askpass {
 
     async fn cleanup(self) -> Result<()> {
         fs::remove_file(&self.path).await.ok();
+        debug!(path = %self.path.display(), "removed SSH askpass helper");
         Ok(())
     }
 }
