@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use tokio::{
     fs::{self, OpenOptions},
@@ -74,17 +74,19 @@ async fn main() -> Result<()> {
         .await
         .context("OpenSSH is required but the `ssh` binary was not found")?;
     info!(path = %ssh.display(), "found OpenSSH binary");
-    let endpoint = tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("received Ctrl+C while resolving SSH endpoint");
-            bail!("interrupted")
-        },
-        result = resolve_endpoint(&args.host, args.port) => result?,
-    };
-    debug!(addresses = ?endpoint, "resolved SSH endpoint");
     let askpass = Askpass::new(&args.password).await?;
 
-    let result = poll_until_connected(&args, &ssh, &endpoint, &askpass).await;
+    let result = tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("received Ctrl+C; stopping SSH polling");
+            Err(anyhow!("interrupted"))
+        },
+        result = async {
+            let endpoint = resolve_endpoint(&args.host, args.port).await?;
+            debug!(addresses = ?endpoint, "resolved SSH endpoint");
+            poll_until_connected(&args, &ssh, &endpoint, &askpass).await
+        } => result,
+    };
     let cleanup_result = askpass.cleanup().await;
     if let Err(error) = &result {
         error!(error = %error, "SSH polling stopped with an error");
@@ -131,10 +133,7 @@ async fn poll_until_connected(
     let target = format!("{}@{}", args.user, args.host);
 
     loop {
-        let port_open = tokio::select! {
-            _ = tokio::signal::ctrl_c() => bail!("interrupted"),
-            open = port_is_open(endpoint) => open,
-        };
+        let port_open = port_is_open(endpoint).await;
         if port_open {
             debug!(
                 port = args.port,
@@ -161,13 +160,7 @@ async fn poll_until_connected(
             debug!("SSH port is not open; will retry");
         }
 
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("received Ctrl+C; stopping SSH polling");
-                bail!("interrupted")
-            },
-            _ = sleep(interval) => {},
-        }
+        sleep(interval).await;
     }
 }
 
@@ -243,6 +236,7 @@ async fn connect_and_run(
 
     let mut child = Command::new(ssh)
         .args(arguments)
+        .kill_on_drop(true)
         .env("SSH_ASKPASS", &askpass.path)
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env("REMOTE_LUKS_PASSWORD", &askpass.password)
@@ -262,15 +256,10 @@ async fn connect_and_run(
             return Err(error.into());
         }
     }
-    let status = tokio::select! {
-        result = child.wait() => result
-            .with_context(|| format!("failed waiting for {}", ssh.display()))?,
-        _ = tokio::signal::ctrl_c() => {
-            info!("received Ctrl+C; terminating SSH child process");
-            child.kill().await.ok();
-            bail!("interrupted")
-        }
-    };
+    let status = child
+        .wait()
+        .await
+        .with_context(|| format!("failed waiting for {}", ssh.display()))?;
 
     if status.success() {
         Ok(())
