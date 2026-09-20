@@ -2,10 +2,11 @@
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-data_dir="$repo_dir/.test-data"
+data_dir=${DROPBEAR_DATA_DIR:-$repo_dir/.test-data}
 ssh_dir="$data_dir/ssh"
 state_dir="$data_dir/state"
-container_name=remote-luks-dropbear
+container_name=${DROPBEAR_CONTAINER_NAME:-remote-luks-dropbear}
+requested_port=${DROPBEAR_PORT:-2222}
 image_name=remote-luks-unlocker/dropbear-test:latest
 
 mkdir -p "$ssh_dir" "$state_dir"
@@ -19,14 +20,29 @@ podman rm -f "$container_name" >/dev/null 2>&1 || true
 podman run -d \
     --name "$container_name" \
     -e "LUKS_PASSPHRASE=${LUKS_PASSPHRASE:-test-passphrase}" \
-    -p 2222:22 \
+    -p "$requested_port:22" \
     -v "$data_dir:/run/test:ro" \
     -v "$state_dir:/var/lib/luks-test" \
     "$image_name"
 
 for _ in $(seq 1 10); do
     if podman ps --quiet --filter "name=^${container_name}$" | grep -q .; then
-        echo "Dropbear test server started on localhost:2222"
+        port="$requested_port"
+        if [ "$requested_port" = 0 ]; then
+            for _ in $(seq 1 10); do
+                port=$(podman port "$container_name" 22/tcp 2>/dev/null \
+                    | sed -n 's/.*://p' | head -n 1)
+                [ -n "$port" ] && break
+                sleep 1
+            done
+        fi
+        if [ -z "${port:-}" ]; then
+            echo "Could not determine the published Dropbear port" >&2
+            podman logs "$container_name" >&2 || true
+            exit 1
+        fi
+        printf '%s\n' "$port" >"$data_dir/port"
+        echo "Dropbear test server started on localhost:$port"
         echo "private key: $ssh_dir/id_ed25519"
         exit 0
     fi

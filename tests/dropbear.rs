@@ -1,9 +1,16 @@
-use std::{env, path::Path, process::Command};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const PASSWORD: &str = "test-passphrase";
 
 struct FixtureGuard<'a> {
     fixture_dir: &'a Path,
+    data_dir: PathBuf,
+    container_name: String,
 }
 
 impl Drop for FixtureGuard<'_> {
@@ -11,31 +18,64 @@ impl Drop for FixtureGuard<'_> {
         let _ = Command::new("make")
             .args(["stop-test-server", "clean-test-data"])
             .current_dir(self.fixture_dir)
+            .env("DROPBEAR_CONTAINER_NAME", &self.container_name)
+            .env("DROPBEAR_DATA_DIR", &self.data_dir)
             .status();
+        let _ = fs::remove_dir_all(&self.data_dir);
     }
+}
+
+fn temporary_data_dir() -> PathBuf {
+    let pid = std::process::id();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before the Unix epoch")
+        .as_nanos();
+    let path = env::temp_dir().join(format!("remote-luks-unlocker-{pid}-{timestamp}"));
+    fs::create_dir(&path).expect("failed to create the fixture data directory");
+    path
 }
 
 #[test]
 fn polling_client_authenticates_to_dropbear_fixture() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dropbear-luks");
+    let data_dir = temporary_data_dir();
+    let data_id = data_dir
+        .file_name()
+        .expect("temporary data directory has no filename")
+        .to_string_lossy();
+    let container_name = format!("remote-luks-dropbear-{data_id}");
+    let fixture = FixtureGuard {
+        fixture_dir: &fixture_dir,
+        data_dir: data_dir.clone(),
+        container_name: container_name.clone(),
+    };
 
     let clean = Command::new("make")
         .arg("clean-test-data")
         .current_dir(&fixture_dir)
+        .env("DROPBEAR_DATA_DIR", &data_dir)
         .status()
         .expect("failed to run the fixture cleanup command");
     assert!(clean.success(), "fixture cleanup failed");
 
-    let _fixture = FixtureGuard {
-        fixture_dir: &fixture_dir,
-    };
-
     let start = Command::new("make")
         .arg("test-server")
         .current_dir(&fixture_dir)
+        .env("DROPBEAR_DATA_DIR", &data_dir)
+        .env("DROPBEAR_CONTAINER_NAME", &container_name)
+        .env("DROPBEAR_PORT", "0")
         .status()
         .expect("failed to run the fixture startup command");
     assert!(start.success(), "Dropbear fixture failed to start");
+
+    let port = fs::read_to_string(data_dir.join("port"))
+        .expect("fixture did not publish a port")
+        .trim()
+        .parse::<u16>()
+        .expect("fixture published an invalid port");
+
+    let _fixture = fixture;
     let binary = env::var("CARGO_BIN_EXE_remote-luks-unlocker")
         .or_else(|_| env::var("CARGO_BIN_EXE_remote_luks_unlocker"))
         .expect("Cargo did not provide the polling binary path");
@@ -44,7 +84,7 @@ fn polling_client_authenticates_to_dropbear_fixture() {
             "--host",
             "127.0.0.1",
             "--port",
-            "2222",
+            &port.to_string(),
             "--user",
             "root",
             "--wait-seconds",

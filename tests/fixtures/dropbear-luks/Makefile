@@ -10,4 +10,4 @@ stop-test-server:
 	./scripts/stop-test-server.sh
 
 clean-test-data:
-	rm -rf .test-data
+	rm -rf "$${DROPBEAR_DATA_DIR:-.test-data}"
