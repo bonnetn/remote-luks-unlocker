@@ -43,6 +43,10 @@ struct Args {
     /// Seconds between port checks and login attempts.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
     interval_seconds: u64,
+
+    /// Remote command to run after authentication.
+    #[arg(long, default_value = "true")]
+    command: String,
 }
 
 fn main() -> Result<()> {
@@ -94,7 +98,7 @@ fn poll_until_connected(
         }
 
         if port_is_open(endpoint) {
-            match authenticate(ssh, &target, args.port, askpass) {
+            match connect_and_run(ssh, &target, args.port, &args.command, askpass) {
                 Ok(()) => return Ok(()),
                 Err(error) => last_error = Some(error),
             }
@@ -119,9 +123,15 @@ fn port_is_open(endpoint: &[SocketAddr]) -> bool {
         .any(|address| TcpStream::connect_timeout(address, Duration::from_secs(1)).is_ok())
 }
 
-fn authenticate(ssh: &PathBuf, target: &str, port: u16, askpass: &Askpass) -> Result<()> {
+fn connect_and_run(
+    ssh: &PathBuf,
+    target: &str,
+    port: u16,
+    command: &str,
+    askpass: &Askpass,
+) -> Result<()> {
     let port = port.to_string();
-    let status = Command::new(ssh)
+    let mut child = Command::new(ssh)
         .args([
             "-p",
             &port,
@@ -142,16 +152,26 @@ fn authenticate(ssh: &PathBuf, target: &str, port: u16, askpass: &Askpass) -> Re
             "-o",
             "ConnectTimeout=2",
             target,
-            "true",
+            command,
         ])
         .env("SSH_ASKPASS", &askpass.path)
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env("REMOTE_LUKS_PASSWORD", &askpass.password)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .spawn()
         .with_context(|| format!("failed to execute {}", ssh.display()))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(askpass.password.as_bytes())
+            .context("failed to send the password to the SSH command")?;
+        stdin.write_all(b"\n")?;
+    }
+    let status = child
+        .wait()
+        .with_context(|| format!("failed waiting for {}", ssh.display()))?;
 
     if status.success() {
         Ok(())

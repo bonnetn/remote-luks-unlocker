@@ -1,30 +1,29 @@
 #!/bin/sh
 set -eu
 
-volume_image=/var/lib/luks-test/luks-volume.img
-mapper_name=luks_test
+state_file=/var/lib/luks-test/state
+expected_passphrase=${LUKS_PASSPHRASE:-test-passphrase}
 
 case "${1:-status}" in
     status)
-        if cryptsetup status "$mapper_name" >/dev/null 2>&1; then
-            echo UNLOCKED
-        else
-            echo LOCKED
-        fi
+        cat "$state_file"
         ;;
     unlock)
-        if cryptsetup status "$mapper_name" >/dev/null 2>&1; then
+        if [ "$(cat "$state_file")" = UNLOCKED ]; then
             echo UNLOCKED
             exit 0
         fi
-        printf 'LUKS passphrase: ' >&2
         IFS= read -r passphrase
-        printf '%s' "$passphrase" | cryptsetup open "$volume_image" "$mapper_name" --key-file -
+        if [ "$passphrase" != "$expected_passphrase" ]; then
+            echo "invalid unlock password" >&2
+            exit 1
+        fi
+        printf '%s\n' UNLOCKED >"$state_file"
         echo UNLOCKED
         ;;
     lock)
-        cryptsetup close "$mapper_name" 2>/dev/null || true
-        echo LOCKED
+        printf '%s\n' LOCKED >"$state_file"
+        cat "$state_file"
         ;;
     *)
         echo "usage: unlock-luks {status|unlock|lock}" >&2

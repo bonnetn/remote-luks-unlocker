@@ -26,27 +26,14 @@ argument list.
 ## Run tests
 
 `cargo test` includes `tests/dropbear.rs`. That integration test builds and
-starts the fixture, runs the polling client against it, and cleans up the
-container and generated volume afterward. It requires Podman with privileged
-loop-device and device-mapper support.
-
-On macOS, prepare a dedicated rootful Podman VM with:
-
-```sh
-make setup-podman-vm
-cargo test
-```
-
-The setup creates or reconfigures a VM named `remote-luks-unlocker`, loads the
-Linux `dm_mod` module, and selects its rootful Podman connection as default.
-Override the name with `PODMAN_MACHINE_NAME` if needed.
+starts the fixture, runs the polling client against it, sends the unlock
+password to the remote command, verifies the dummy state transition, and cleans
+up the container and generated state afterward.
 
 ## Run the fixture
 
-Requirements: Podman, `ssh-keygen`, and a Podman runtime capable of running a
-privileged container with loop devices and device-mapper (`dm_mod`). Rootless
-Podman on macOS may not expose `/dev/mapper/control`; use rootful Linux Podman
-or configure the Podman VM accordingly.
+Requirements: Podman and `ssh-keygen`. The default fixture is deliberately
+rootless and uses a dummy unlock state instead of device-mapper/LUKS.
 
 ```sh
 make test-server
@@ -54,13 +41,13 @@ make test-connection
 make stop-test-server
 ```
 
-The fixture listens on `127.0.0.1:2222`. It starts Dropbear while a
-file-backed LUKS2 volume is locked, then the smoke test unlocks it through SSH.
-Generated keys and the test volume are stored in the fixture directory and are
+The fixture listens on `127.0.0.1:2222`. It starts Dropbear while a dummy
+unlock state is `LOCKED`, then the smoke test changes it to `UNLOCKED` through
+SSH. Generated keys and test state are stored in the fixture directory and are
 ignored by git. The default passphrase is `test-passphrase`; set
 `LUKS_PASSPHRASE` consistently for both `make test-server` and
 `make test-connection` to change it.
 
-The container is intentionally run with `--privileged`: cryptsetup needs
-access to loop/device-mapper support. This fixture is for local integration
-tests only and is not a production SSH or disk-unlock configuration.
+This fixture is for local integration tests only and is not a production SSH
+or disk-unlock configuration. A real LUKS/device-mapper fixture can be added
+as a separate privileged test when needed.

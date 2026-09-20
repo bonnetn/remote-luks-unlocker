@@ -51,6 +51,8 @@ fn polling_client_authenticates_to_dropbear_fixture() {
             "30",
             "--interval-seconds",
             "1",
+            "--command",
+            "unlock-luks unlock",
         ])
         .env("REMOTE_LUKS_PASSWORD", PASSWORD)
         .output()

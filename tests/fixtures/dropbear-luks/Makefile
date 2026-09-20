@@ -1,7 +1,4 @@
-.PHONY: setup-podman-vm test-server test-connection stop-test-server clean-test-data
-
-setup-podman-vm:
-	./scripts/setup-podman-vm.sh
+.PHONY: test-server test-connection stop-test-server clean-test-data
 
 test-server:
 	./scripts/start-test-server.sh

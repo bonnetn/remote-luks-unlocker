@@ -2,7 +2,7 @@
 set -eu
 
 state_dir=/var/lib/luks-test
-volume_image="$state_dir/luks-volume.img"
+state_file="$state_dir/state"
 host_key=/etc/dropbear/dropbear_ed25519_host_key
 authorized_keys=/run/test/authorized_keys
 passphrase=${LUKS_PASSPHRASE:-test-passphrase}
@@ -26,16 +26,9 @@ chmod 0600 /root/.ssh/authorized_keys
 # the key-based login too, since it is useful for debugging the fixture.
 printf 'root:%s\n' "$passphrase" | chpasswd
 
-# Create a small file-backed LUKS volume once. It starts locked on every
-# container start, which mirrors the point at which initramfs Dropbear waits
-# for an unlock command.
-if [ ! -f "$volume_image" ]; then
-    truncate -s 32M "$volume_image"
-    printf '%s' "$passphrase" | cryptsetup luksFormat --batch-mode --type luks2 "$volume_image" -
-    printf '%s' "$passphrase" | cryptsetup open "$volume_image" luks_test --key-file -
-    mkfs.ext4 -q /dev/mapper/luks_test
-    cryptsetup close luks_test
+if [ ! -f "$state_file" ]; then
+    printf '%s\n' LOCKED >"$state_file"
 fi
 
-printf '%s\n' "Dropbear is listening; LUKS volume is locked." >&2
+printf '%s\n' "Dropbear is listening; dummy unlock state is $(cat "$state_file")." >&2
 exec dropbear -F -E -p 0.0.0.0:22 -r "$host_key"

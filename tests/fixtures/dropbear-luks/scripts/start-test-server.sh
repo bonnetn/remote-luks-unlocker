@@ -18,7 +18,6 @@ podman build -t "$image_name" "$repo_dir"
 podman rm -f "$container_name" >/dev/null 2>&1 || true
 podman run -d \
     --name "$container_name" \
-    --privileged \
     -e "LUKS_PASSPHRASE=${LUKS_PASSPHRASE:-test-passphrase}" \
     -p 2222:22 \
     -v "$data_dir:/run/test:ro" \
