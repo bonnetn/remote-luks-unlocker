@@ -16,11 +16,16 @@ cargo run -- \
   --port 2222 \
   --user root \
   --password "$REMOTE_LUKS_PASSWORD" \
-  --interval-seconds 1
+  --interval-seconds 1 \
+  --attempt-timeout-seconds 30
 ```
 
 The client logs at `info` level by default. Set `RUST_LOG` for more detail,
 for example `RUST_LOG=remote_luks_unlocker=debug`.
+
+Polling continues indefinitely, while each individual SSH connection and
+remote-command attempt is bounded by `--attempt-timeout-seconds` (or
+`REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS`).
 
 Every option can be supplied through an environment variable using the
 `REMOTE_LUKS_*` names shown by `--help`; for example:

@@ -128,6 +128,8 @@ impl Fixture {
             "root".into(),
             "--interval-seconds".into(),
             "1".into(),
+            "--attempt-timeout-seconds".into(),
+            "10".into(),
             "--command".into(),
             "unlock-luks unlock".into(),
         ]
@@ -255,6 +257,7 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
         ("REMOTE_LUKS_INTERVAL_SECONDS", "1"),
+        ("REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS", "10"),
         ("REMOTE_LUKS_COMMAND", "unlock-luks unlock"),
     ];
     let result = fixture

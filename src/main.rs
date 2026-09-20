@@ -60,6 +60,15 @@ struct Args {
     )]
     interval_seconds: u64,
 
+    /// Maximum time allowed for one SSH connection and command attempt.
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS",
+        default_value_t = 30,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    attempt_timeout_seconds: u64,
+
     /// Remote command to run after authentication.
     #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "true")]
     command: String,
@@ -84,7 +93,8 @@ async fn main() -> Result<()> {
         result = async {
             let endpoint = resolve_endpoint(&args.host, args.port).await?;
             debug!(addresses = ?endpoint, "resolved SSH endpoint");
-            poll_until_connected(&args, &ssh, &endpoint, &askpass).await
+            let ssh_arguments = build_ssh_arguments(&args);
+            poll_until_connected(&args, &ssh, &ssh_arguments, &endpoint, &askpass).await
         } => result,
     };
     let cleanup_result = askpass.cleanup().await;
@@ -126,11 +136,11 @@ async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
 async fn poll_until_connected(
     args: &Args,
     ssh: &Path,
+    ssh_arguments: &[String],
     endpoint: &[SocketAddr],
     askpass: &Askpass,
 ) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
-    let target = format!("{}@{}", args.user, args.host);
 
     loop {
         let port_open = port_is_open(endpoint).await;
@@ -141,11 +151,8 @@ async fn poll_until_connected(
             );
             match connect_and_run(
                 ssh,
-                &target,
-                args.port,
-                &args.command,
-                args.identity_file.as_deref(),
-                args.known_hosts.as_deref(),
+                ssh_arguments,
+                Duration::from_secs(args.attempt_timeout_seconds),
                 askpass,
             )
             .await
@@ -178,17 +185,64 @@ async fn port_is_open(endpoint: &[SocketAddr]) -> bool {
 
 async fn connect_and_run(
     ssh: &Path,
-    target: &str,
-    port: u16,
-    command: &str,
-    identity_file: Option<&Path>,
-    known_hosts: Option<&Path>,
+    arguments: &[String],
+    attempt_timeout: Duration,
     askpass: &Askpass,
 ) -> Result<()> {
-    debug!(target, "starting SSH child process");
+    debug!("starting SSH child process");
+    let mut child = Command::new(ssh)
+        .args(arguments)
+        .kill_on_drop(true)
+        .env("SSH_ASKPASS", &askpass.path)
+        .env("SSH_ASKPASS_REQUIRE", "force")
+        .env("REMOTE_LUKS_PASSWORD", &askpass.password)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("failed to execute {}", ssh.display()))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(error) = stdin.write_all(askpass.password.as_bytes()).await {
+            terminate_child(&mut child).await;
+            return Err(error).context("failed to send the password to the SSH command");
+        }
+        if let Err(error) = stdin.write_all(b"\n").await {
+            terminate_child(&mut child).await;
+            return Err(error).context("failed to terminate password input");
+        }
+    }
+
+    let status = match timeout(attempt_timeout, child.wait()).await {
+        Ok(result) => result.with_context(|| format!("failed waiting for {}", ssh.display()))?,
+        Err(_) => {
+            terminate_child(&mut child).await;
+            bail!("SSH attempt exceeded {attempt_timeout:?}")
+        }
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        debug!(%status, "SSH child process failed");
+        bail!("ssh exited with status {status}")
+    }
+}
+
+async fn terminate_child(child: &mut tokio::process::Child) {
+    if let Err(error) = child.kill().await {
+        debug!(error = %error, "failed to kill SSH child process");
+    }
+    if let Err(error) = child.wait().await {
+        debug!(error = %error, "failed to reap SSH child process");
+    }
+}
+
+fn build_ssh_arguments(args: &Args) -> Vec<String> {
+    let target = format!("{}@{}", args.user, args.host);
     let mut arguments = vec![
         "-p".to_owned(),
-        port.to_string(),
+        args.port.to_string(),
         "-o".to_owned(),
         "BatchMode=no".to_owned(),
         "-o".to_owned(),
@@ -198,7 +252,7 @@ async fn connect_and_run(
         "-o".to_owned(),
         "ConnectTimeout=2".to_owned(),
     ];
-    if let Some(known_hosts) = known_hosts {
+    if let Some(known_hosts) = args.known_hosts.as_deref() {
         arguments.extend([
             "-o".to_owned(),
             "StrictHostKeyChecking=yes".to_owned(),
@@ -213,7 +267,7 @@ async fn connect_and_run(
             "UserKnownHostsFile=/dev/null".to_owned(),
         ]);
     }
-    if let Some(identity_file) = identity_file {
+    if let Some(identity_file) = args.identity_file.as_deref() {
         arguments.extend([
             "-i".to_owned(),
             identity_file.to_string_lossy().into_owned(),
@@ -232,41 +286,8 @@ async fn connect_and_run(
             "PubkeyAuthentication=no".to_owned(),
         ]);
     }
-    arguments.extend([target.to_owned(), command.to_owned()]);
-
-    let mut child = Command::new(ssh)
-        .args(arguments)
-        .kill_on_drop(true)
-        .env("SSH_ASKPASS", &askpass.path)
-        .env("SSH_ASKPASS_REQUIRE", "force")
-        .env("REMOTE_LUKS_PASSWORD", &askpass.password)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("failed to execute {}", ssh.display()))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(askpass.password.as_bytes()).await {
-            child.kill().await.ok();
-            return Err(error).context("failed to send the password to the SSH command");
-        }
-        if let Err(error) = stdin.write_all(b"\n").await {
-            child.kill().await.ok();
-            return Err(error.into());
-        }
-    }
-    let status = child
-        .wait()
-        .await
-        .with_context(|| format!("failed waiting for {}", ssh.display()))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        debug!(%status, "SSH child process failed");
-        bail!("ssh exited with status {status}")
-    }
+    arguments.extend([target, args.command.clone()]);
+    arguments
 }
 
 struct Askpass {
@@ -296,6 +317,12 @@ impl Askpass {
             return Err(error)
                 .with_context(|| format!("could not write askpass helper {}", path.display()));
         }
+        if let Err(error) = fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).await
+        {
+            fs::remove_file(&path).await.ok();
+            return Err(error)
+                .with_context(|| format!("could not secure askpass helper {}", path.display()));
+        }
         debug!(path = %path.display(), "created private SSH askpass helper");
         Ok(Self {
             path,
@@ -304,15 +331,31 @@ impl Askpass {
     }
 
     async fn cleanup(self) -> Result<()> {
-        match fs::remove_file(&self.path).await {
+        let mut this = self;
+        let path = std::mem::take(&mut this.path);
+        match fs::remove_file(&path).await {
             Ok(()) => {
-                debug!(path = %self.path.display(), "removed SSH askpass helper");
+                debug!(path = %path.display(), "removed SSH askpass helper");
                 Ok(())
             }
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error).with_context(|| {
-                format!("could not remove askpass helper {}", self.path.display())
-            }),
+            Err(error) => {
+                this.path = path;
+                Err(error).with_context(|| {
+                    format!("could not remove askpass helper {}", this.path.display())
+                })
+            }
         }
+    }
+}
+
+impl Drop for Askpass {
+    fn drop(&mut self) {
+        let path = std::mem::take(&mut self.path);
+        if path.as_os_str().is_empty() {
+            return;
+        }
+
+        let _ = std::fs::remove_file(path);
     }
 }
