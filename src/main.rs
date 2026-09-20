@@ -40,6 +40,10 @@ struct Args {
     #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
     identity_file: Option<PathBuf>,
 
+    /// known_hosts file used to verify the remote host key.
+    #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
+    known_hosts: Option<PathBuf>,
+
     /// Maximum time to wait for the SSH port and a successful login.
     #[arg(
         long,
@@ -118,6 +122,7 @@ fn poll_until_connected(
                 args.port,
                 &args.command,
                 args.identity_file.as_deref(),
+                args.known_hosts.as_deref(),
                 askpass,
             ) {
                 Ok(()) => return Ok(()),
@@ -150,6 +155,7 @@ fn connect_and_run(
     port: u16,
     command: &str,
     identity_file: Option<&std::path::Path>,
+    known_hosts: Option<&std::path::Path>,
     askpass: &Askpass,
 ) -> Result<()> {
     let port = port.to_string();
@@ -163,12 +169,23 @@ fn connect_and_run(
         "-o".to_owned(),
         "KbdInteractiveAuthentication=no".to_owned(),
         "-o".to_owned(),
-        "StrictHostKeyChecking=no".to_owned(),
-        "-o".to_owned(),
-        "UserKnownHostsFile=/dev/null".to_owned(),
-        "-o".to_owned(),
         "ConnectTimeout=2".to_owned(),
     ];
+    if let Some(known_hosts) = known_hosts {
+        arguments.extend([
+            "-o".to_owned(),
+            "StrictHostKeyChecking=yes".to_owned(),
+            "-o".to_owned(),
+            format!("UserKnownHostsFile={}", known_hosts.display()),
+        ]);
+    } else {
+        arguments.extend([
+            "-o".to_owned(),
+            "StrictHostKeyChecking=no".to_owned(),
+            "-o".to_owned(),
+            "UserKnownHostsFile=/dev/null".to_owned(),
+        ]);
+    }
     if let Some(identity_file) = identity_file {
         arguments.extend([
             "-i".to_owned(),

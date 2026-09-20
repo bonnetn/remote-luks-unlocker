@@ -28,6 +28,7 @@ export REMOTE_LUKS_PORT=2222
 export REMOTE_LUKS_USER=root
 export REMOTE_LUKS_PASSWORD='test-passphrase'
 export REMOTE_LUKS_IDENTITY_FILE="$HOME/.ssh/id_ed25519"
+export REMOTE_LUKS_KNOWN_HOSTS="$HOME/.ssh/known_hosts.remote-luks"
 export REMOTE_LUKS_COMMAND='unlock-luks unlock'
 cargo run
 ```
@@ -36,7 +37,10 @@ Explicit CLI arguments take precedence over environment variables. The
 identity-file value is the private key; its matching `.pub` key must be
 authorized on the remote Dropbear server. The password is provided to OpenSSH
 through its askpass mechanism and to the remote command on standard input; it
-is not added to the SSH argument list.
+is not added to the SSH argument list. When `REMOTE_LUKS_KNOWN_HOSTS` is set,
+strict host-key checking is enabled and the file must contain the expected
+OpenSSH `known_hosts` entry. Without it, host-key checking is disabled for the
+local test fixture.
 
 ## Run tests
 
