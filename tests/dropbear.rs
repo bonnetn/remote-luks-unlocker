@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    net::TcpListener,
     path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -45,6 +46,12 @@ fn polling_client_authenticates_to_dropbear_fixture() {
         .expect("temporary data directory has no filename")
         .to_string_lossy();
     let container_name = format!("remote-luks-dropbear-{data_id}");
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to allocate a test port");
+    let port = listener
+        .local_addr()
+        .expect("failed to inspect the test port")
+        .port();
+    drop(listener);
     let fixture = FixtureGuard {
         fixture_dir: &fixture_dir,
         data_dir: data_dir.clone(),
@@ -64,16 +71,10 @@ fn polling_client_authenticates_to_dropbear_fixture() {
         .current_dir(&fixture_dir)
         .env("DROPBEAR_DATA_DIR", &data_dir)
         .env("DROPBEAR_CONTAINER_NAME", &container_name)
-        .env("DROPBEAR_PORT", "0")
+        .env("DROPBEAR_PORT", port.to_string())
         .status()
         .expect("failed to run the fixture startup command");
     assert!(start.success(), "Dropbear fixture failed to start");
-
-    let port = fs::read_to_string(data_dir.join("port"))
-        .expect("fixture did not publish a port")
-        .trim()
-        .parse::<u16>()
-        .expect("fixture published an invalid port");
 
     let _fixture = fixture;
     let binary = env::var("CARGO_BIN_EXE_remote-luks-unlocker")
