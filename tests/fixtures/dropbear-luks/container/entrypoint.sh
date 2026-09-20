@@ -22,6 +22,10 @@ fi
 cp "$authorized_keys" /root/.ssh/authorized_keys
 chmod 0600 /root/.ssh/authorized_keys
 
+# The Rust integration test authenticates through OpenSSH password auth. Keep
+# the key-based login too, since it is useful for debugging the fixture.
+printf 'root:%s\n' "$passphrase" | chpasswd
+
 # Create a small file-backed LUKS volume once. It starts locked on every
 # container start, which mirrors the point at which initramfs Dropbear waits
 # for an unlock command.

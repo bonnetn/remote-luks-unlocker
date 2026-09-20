@@ -25,12 +25,15 @@ podman run -d \
     -v "$state_dir:/var/lib/luks-test" \
     "$image_name"
 
-sleep 2
-if ! podman ps --quiet --filter "name=^${container_name}$" | grep -q .; then
-    echo "Dropbear test server exited during startup:" >&2
-    podman logs "$container_name" >&2 || true
-    exit 1
-fi
+for _ in $(seq 1 10); do
+    if podman ps --quiet --filter "name=^${container_name}$" | grep -q .; then
+        echo "Dropbear test server started on localhost:2222"
+        echo "private key: $ssh_dir/id_ed25519"
+        exit 0
+    fi
+    sleep 1
+done
 
-echo "Dropbear test server started on localhost:2222"
-echo "private key: $ssh_dir/id_ed25519"
+echo "Dropbear test server exited during startup:" >&2
+podman logs "$container_name" >&2 || true
+exit 1

@@ -23,6 +23,13 @@ cargo run -- \
 provided to OpenSSH through its askpass mechanism and is not added to the SSH
 argument list.
 
+## Run tests
+
+`cargo test` includes `tests/dropbear.rs`. That integration test builds and
+starts the fixture, runs the polling client against it, and cleans up the
+container and generated volume afterward. It requires Podman with privileged
+loop-device and device-mapper support.
+
 ## Run the fixture
 
 Requirements: Podman, `ssh-keygen`, and a Podman runtime capable of running a
