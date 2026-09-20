@@ -331,31 +331,15 @@ impl Askpass {
     }
 
     async fn cleanup(self) -> Result<()> {
-        let mut this = self;
-        let path = std::mem::take(&mut this.path);
-        match fs::remove_file(&path).await {
+        match fs::remove_file(&self.path).await {
             Ok(()) => {
-                debug!(path = %path.display(), "removed SSH askpass helper");
+                debug!(path = %self.path.display(), "removed SSH askpass helper");
                 Ok(())
             }
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => {
-                this.path = path;
-                Err(error).with_context(|| {
-                    format!("could not remove askpass helper {}", this.path.display())
-                })
-            }
+            Err(error) => Err(error).with_context(|| {
+                format!("could not remove askpass helper {}", self.path.display())
+            }),
         }
-    }
-}
-
-impl Drop for Askpass {
-    fn drop(&mut self) {
-        let path = std::mem::take(&mut self.path);
-        if path.as_os_str().is_empty() {
-            return;
-        }
-
-        let _ = std::fs::remove_file(path);
     }
 }
