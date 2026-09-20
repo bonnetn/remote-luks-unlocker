@@ -37,8 +37,45 @@ fn temporary_data_dir() -> PathBuf {
     path
 }
 
+fn ensure_podman_machine() {
+    let machine =
+        env::var("PODMAN_MACHINE_NAME").unwrap_or_else(|_| "podman-machine-default".to_owned());
+    let connection =
+        env::var("PODMAN_CONNECTION").unwrap_or_else(|_| "podman-machine-default".to_owned());
+    let inspect = Command::new("podman")
+        .args(["machine", "inspect", "--format", "{{.State}}", &machine])
+        .output()
+        .expect("Podman is required for the Dropbear integration test");
+    assert!(
+        inspect.status.success(),
+        "Podman machine {machine:?} does not exist: {}",
+        String::from_utf8_lossy(&inspect.stderr)
+    );
+
+    if String::from_utf8_lossy(&inspect.stdout).trim() != "running" {
+        let start = Command::new("podman")
+            .args(["machine", "start", &machine])
+            .status()
+            .expect("failed to start the Podman machine");
+        assert!(
+            start.success(),
+            "failed to start Podman machine {machine:?}"
+        );
+    }
+
+    let select = Command::new("podman")
+        .args(["system", "connection", "default", &connection])
+        .status()
+        .expect("failed to select the Podman connection");
+    assert!(
+        select.success(),
+        "failed to select Podman connection {connection:?}"
+    );
+}
+
 #[test]
 fn polling_client_authenticates_to_dropbear_fixture() {
+    ensure_podman_machine();
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dropbear-luks");
     let data_dir = temporary_data_dir();
     let data_id = data_dir
