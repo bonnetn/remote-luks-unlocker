@@ -4,17 +4,18 @@ This repository contains the Rust client. Its Dropbear/LUKS container is an
 integration-test fixture, not the application itself, and lives under
 `tests/fixtures/dropbear-luks/`.
 
-## Poll for SSH and authenticate
+## Poll for SSH and unlock
 
 The client checks that the raw `ssh` binary is installed, polls the target TCP
-port, and retries password authentication until it succeeds or you press
-Ctrl+C:
+port, authenticates with the required private key, and retries the remote
+unlock command until it succeeds or you press Ctrl+C:
 
 ```sh
 cargo run -- \
   --host 127.0.0.1 \
   --port 2222 \
   --user root \
+  --identity-file "$HOME/.ssh/id_ed25519" \
   --password "$REMOTE_LUKS_PASSWORD" \
   --interval-seconds 1 \
   --attempt-timeout-seconds 30
@@ -43,9 +44,9 @@ cargo run
 
 Explicit CLI arguments take precedence over environment variables. The
 identity-file value is the private key; its matching `.pub` key must be
-authorized on the remote Dropbear server. The password is provided to OpenSSH
-through its askpass mechanism and to the remote command on standard input; it
-is not added to the SSH argument list. When `REMOTE_LUKS_KNOWN_HOSTS` is set,
+authorized on the remote Dropbear server. The password is provided only to
+the remote command on standard input; it is not used for SSH authentication or
+added to the SSH argument list. When `REMOTE_LUKS_KNOWN_HOSTS` is set,
 strict host-key checking is enabled and the file must contain the expected
 OpenSSH `known_hosts` entry. Without it, host-key checking is disabled for the
 local test fixture.

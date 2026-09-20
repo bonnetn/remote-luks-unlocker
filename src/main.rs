@@ -1,6 +1,5 @@
 use std::{
     env,
-    io::ErrorKind,
     net::SocketAddr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -10,13 +9,11 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
-use tempfile::Builder;
 use tokio::{
-    fs::{self, OpenOptions},
+    fs,
     io::AsyncWriteExt,
     net::{TcpStream, lookup_host},
     process::Command,
-    task::spawn_blocking,
     time::{sleep, timeout},
 };
 use tracing::{debug, error, info, warn};
@@ -41,13 +38,13 @@ struct Args {
     #[arg(short, long, env = "REMOTE_LUKS_USER")]
     user: String,
 
-    /// SSH password. REMOTE_LUKS_PASSWORD can be used instead.
+    /// Passphrase sent to the remote unlock command.
     #[arg(short, long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
     password: String,
 
-    /// Private SSH identity file whose public key is authorized on the server.
+    /// Required private SSH identity file whose public key is authorized on the server.
     #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
-    identity_file: Option<PathBuf>,
+    identity_file: PathBuf,
 
     /// known_hosts file used to verify the remote host key.
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
@@ -85,8 +82,6 @@ async fn main() -> Result<()> {
         .await
         .context("OpenSSH is required but the `ssh` binary was not found")?;
     info!(path = %ssh.display(), "found OpenSSH binary");
-    let askpass = Askpass::new(&args.password).await?;
-
     let result = tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("received Ctrl+C; stopping SSH polling");
@@ -96,14 +91,13 @@ async fn main() -> Result<()> {
             let endpoint = resolve_endpoint(&args.host, args.port).await?;
             debug!(addresses = ?endpoint, "resolved SSH endpoint");
             let ssh_arguments = build_ssh_arguments(&args);
-            poll_until_connected(&args, &ssh, &ssh_arguments, &endpoint, &askpass).await
+            poll_until_connected(&args, &ssh, &ssh_arguments, &endpoint).await
         } => result,
     };
-    let cleanup_result = askpass.cleanup().await;
     if let Err(error) = &result {
         error!(error = %error, "SSH polling stopped with an error");
     }
-    result.and(cleanup_result)
+    result
 }
 
 fn init_tracing() {
@@ -140,7 +134,6 @@ async fn poll_until_connected(
     ssh: &Path,
     ssh_arguments: &[String],
     endpoint: &[SocketAddr],
-    askpass: &Askpass,
 ) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
 
@@ -155,7 +148,7 @@ async fn poll_until_connected(
                 ssh,
                 ssh_arguments,
                 Duration::from_secs(args.attempt_timeout_seconds),
-                askpass,
+                &args.password,
             )
             .await
             {
@@ -189,15 +182,12 @@ async fn connect_and_run(
     ssh: &Path,
     arguments: &[String],
     attempt_timeout: Duration,
-    askpass: &Askpass,
+    password: &str,
 ) -> Result<()> {
     debug!("starting SSH child process");
     let mut child = Command::new(ssh)
         .args(arguments)
         .kill_on_drop(true)
-        .env("SSH_ASKPASS", &askpass.path)
-        .env("SSH_ASKPASS_REQUIRE", "force")
-        .env("REMOTE_LUKS_PASSWORD", &askpass.password)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -205,7 +195,7 @@ async fn connect_and_run(
         .with_context(|| format!("failed to execute {}", ssh.display()))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(askpass.password.as_bytes()).await {
+        if let Err(error) = stdin.write_all(password.as_bytes()).await {
             terminate_child(&mut child).await;
             return Err(error).context("failed to send the password to the SSH command");
         }
@@ -269,87 +259,20 @@ fn build_ssh_arguments(args: &Args) -> Vec<String> {
             "UserKnownHostsFile=/dev/null".to_owned(),
         ]);
     }
-    if let Some(identity_file) = args.identity_file.as_deref() {
-        arguments.extend([
-            "-i".to_owned(),
-            identity_file.to_string_lossy().into_owned(),
-            "-o".to_owned(),
-            "IdentitiesOnly=yes".to_owned(),
-            "-o".to_owned(),
-            "PreferredAuthentications=publickey,password".to_owned(),
-            "-o".to_owned(),
-            "PubkeyAuthentication=yes".to_owned(),
-        ]);
-    } else {
-        arguments.extend([
-            "-o".to_owned(),
-            "PreferredAuthentications=password".to_owned(),
-            "-o".to_owned(),
-            "PubkeyAuthentication=no".to_owned(),
-        ]);
-    }
+    arguments.extend([
+        "-i".to_owned(),
+        args.identity_file.to_string_lossy().into_owned(),
+        "-o".to_owned(),
+        "IdentitiesOnly=yes".to_owned(),
+        "-o".to_owned(),
+        "PreferredAuthentications=publickey".to_owned(),
+        "-o".to_owned(),
+        "PubkeyAuthentication=yes".to_owned(),
+        "-o".to_owned(),
+        "PasswordAuthentication=no".to_owned(),
+    ]);
     arguments.extend([target, args.command.clone()]);
     arguments
-}
-
-struct Askpass {
-    path: PathBuf,
-    password: String,
-}
-
-impl Askpass {
-    async fn new(password: &str) -> Result<Self> {
-        let temporary_file = spawn_blocking(|| {
-            Builder::new()
-                .prefix("remote-luks-unlocker-askpass-")
-                .tempfile_in(env::temp_dir())
-        })
-        .await
-        .context("askpass temporary-file task failed")?
-        .context("could not create askpass temporary file")?;
-        let (_, path) = temporary_file
-            .keep()
-            .context("could not retain askpass temporary file")?;
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(&path)
-            .await
-            .with_context(|| format!("could not create askpass helper {}", path.display()))?;
-        if let Err(error) = file
-            .write_all(b"#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n")
-            .await
-        {
-            fs::remove_file(&path).await.ok();
-            return Err(error)
-                .with_context(|| format!("could not write askpass helper {}", path.display()));
-        }
-        if let Err(error) = fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).await
-        {
-            fs::remove_file(&path).await.ok();
-            return Err(error)
-                .with_context(|| format!("could not secure askpass helper {}", path.display()));
-        }
-        debug!(path = %path.display(), "created private SSH askpass helper");
-        Ok(Self {
-            path,
-            password: password.to_owned(),
-        })
-    }
-
-    async fn cleanup(self) -> Result<()> {
-        match fs::remove_file(&self.path).await {
-            Ok(()) => {
-                debug!(path = %self.path.display(), "removed SSH askpass helper");
-                Ok(())
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error).with_context(|| {
-                format!("could not remove askpass helper {}", self.path.display())
-            }),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -370,7 +293,7 @@ mod tests {
             port: 2222,
             user: "root".to_owned(),
             password: "secret".to_owned(),
-            identity_file: None,
+            identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: None,
             interval_seconds: 3,
             attempt_timeout_seconds: 7,
@@ -379,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_password_only_ssh_arguments() {
+    fn builds_public_key_ssh_arguments_without_host_key_verification() {
         let arguments = build_ssh_arguments(&test_args());
 
         assert_eq!(
@@ -399,10 +322,16 @@ mod tests {
                 "StrictHostKeyChecking=no",
                 "-o",
                 "UserKnownHostsFile=/dev/null",
+                "-i",
+                "/tmp/id_ed25519",
                 "-o",
-                "PreferredAuthentications=password",
+                "IdentitiesOnly=yes",
                 "-o",
-                "PubkeyAuthentication=no",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "PubkeyAuthentication=yes",
+                "-o",
+                "PasswordAuthentication=no",
                 "root@example.test",
                 "unlock-luks unlock",
             ]
@@ -412,7 +341,7 @@ mod tests {
     #[test]
     fn builds_public_key_and_known_hosts_arguments() {
         let mut args = test_args();
-        args.identity_file = Some(PathBuf::from("/tmp/id_ed25519"));
+        args.identity_file = PathBuf::from("/tmp/id_ed25519");
         args.known_hosts = Some(PathBuf::from("/tmp/known_hosts"));
 
         let arguments = build_ssh_arguments(&args);
@@ -430,7 +359,12 @@ mod tests {
         assert!(
             arguments
                 .iter()
-                .any(|argument| argument == "PreferredAuthentications=publickey,password")
+                .any(|argument| argument == "PreferredAuthentications=publickey")
+        );
+        assert!(
+            arguments
+                .iter()
+                .any(|argument| argument == "PasswordAuthentication=no")
         );
         assert!(
             !arguments
@@ -449,46 +383,12 @@ mod tests {
             "root",
             "--password",
             "secret",
+            "--identity-file",
+            "/tmp/id_ed25519",
         ])
         .expect("default CLI arguments should parse");
 
         assert_eq!(args.attempt_timeout_seconds, 30);
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn askpass_is_owner_readable_and_executable() {
-        let askpass = Askpass::new("secret")
-            .await
-            .expect("askpass creation failed");
-        let metadata = fs::metadata(&askpass.path).expect("askpass file is missing");
-
-        assert_eq!(metadata.permissions().mode() & 0o777, 0o500);
-        assert_eq!(
-            fs::read_to_string(&askpass.path).expect("askpass file is unreadable"),
-            "#!/bin/sh\nprintf '%s\\n' \"$REMOTE_LUKS_PASSWORD\"\n"
-        );
-        assert!(
-            !fs::read_to_string(&askpass.path)
-                .expect("askpass file is unreadable")
-                .contains("secret")
-        );
-
-        let path = askpass.path.clone();
-        askpass.cleanup().await.expect("askpass cleanup failed");
-        assert!(!path.exists());
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn askpass_cleanup_is_idempotent_for_missing_file() {
-        let askpass = Askpass::new("secret")
-            .await
-            .expect("askpass creation failed");
-        fs::remove_file(&askpass.path).expect("failed to remove askpass test file");
-
-        askpass
-            .cleanup()
-            .await
-            .expect("missing askpass file should be harmless");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -526,14 +426,9 @@ mod tests {
             .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
             .expect("failed to make fake SSH script executable");
-        let askpass = Askpass::new("secret")
-            .await
-            .expect("askpass creation failed");
-
-        let result = connect_and_run(&script_path, &[], Duration::from_millis(50), &askpass).await;
+        let result = connect_and_run(&script_path, &[], Duration::from_millis(50), "secret").await;
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
-        askpass.cleanup().await.expect("askpass cleanup failed");
         assert!(
             result
                 .expect_err("the fake SSH process should time out")
@@ -559,14 +454,9 @@ mod tests {
         .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
             .expect("failed to make fake SSH script executable");
-        let askpass = Askpass::new("secret")
-            .await
-            .expect("askpass creation failed");
-
-        let result = connect_and_run(&script_path, &[], Duration::from_secs(1), &askpass).await;
+        let result = connect_and_run(&script_path, &[], Duration::from_secs(1), "secret").await;
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
-        askpass.cleanup().await.expect("askpass cleanup failed");
         result.expect("successful fake SSH command should return success");
     }
 }

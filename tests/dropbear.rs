@@ -126,6 +126,8 @@ impl Fixture {
             self.port.to_string(),
             "--user".into(),
             "root".into(),
+            "--identity-file".into(),
+            self.identity_file().to_string_lossy().into_owned(),
             "--interval-seconds".into(),
             "1".into(),
             "--attempt-timeout-seconds".into(),
@@ -204,7 +206,7 @@ fn ensure_podman_machine() {
 }
 
 #[test]
-fn password_authentication_with_cli_options() {
+fn public_key_authentication_without_host_key_verification() {
     let _lock = FIXTURE_LOCK.lock().unwrap();
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
@@ -214,7 +216,7 @@ fn password_authentication_with_cli_options() {
         .expect("polling client timed out");
     assert!(
         result.status.success(),
-        "CLI password flow failed: {result:?}"
+        "CLI public-key flow failed: {result:?}"
     );
 }
 
@@ -226,8 +228,6 @@ fn identity_and_host_key_with_cli_options() {
     args.extend([
         "--password".into(),
         PASSWORD.into(),
-        "--identity-file".into(),
-        fixture.identity_file().to_string_lossy().into_owned(),
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
     ]);
