@@ -20,8 +20,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: "1"
-      PODMAN_MACHINE_NAME: podman-machine-default
-      PODMAN_CONNECTION: podman-machine-default
 
     steps:
       # Pin actions to an immutable commit rather than a mutable tag.
@@ -49,15 +47,8 @@ jobs:
           fi
           podman --version
 
-      - name: Start Podman machine
+      - name: Check Podman
         run: |
-          if ! podman machine inspect "$PODMAN_MACHINE_NAME" >/dev/null 2>&1; then
-            podman machine init "$PODMAN_MACHINE_NAME"
-          fi
-          if [ "$(podman machine inspect --format '{{.State}}' "$PODMAN_MACHINE_NAME")" != "running" ]; then
-            podman machine start "$PODMAN_MACHINE_NAME"
-          fi
-          podman system connection default "$PODMAN_CONNECTION"
           podman info
 
       - name: Install cargo-deny

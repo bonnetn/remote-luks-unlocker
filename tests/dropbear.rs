@@ -166,6 +166,15 @@ fn temporary_data_dir() -> PathBuf {
 }
 
 fn ensure_podman_machine() {
+    let local_engine = Command::new("podman")
+        .args(["info", "--format", "{{.Host.OS}}"])
+        .status()
+        .expect("Podman is required for the Dropbear integration test")
+        .success();
+    if local_engine {
+        return;
+    }
+
     PODMAN_READY.get_or_init(|| {
         let machine =
             env::var("PODMAN_MACHINE_NAME").unwrap_or_else(|_| "podman-machine-default".to_owned());
