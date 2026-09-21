@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 permissions: {}
 
@@ -12,12 +12,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Run CI checks
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   release:
+    needs: checks
     name: Release patch version
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      !startsWith(github.event.workflow_run.head_commit.message, 'chore: Release')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -32,13 +35,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
-      - name: Check out tested revision on main
-        env:
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          git checkout -B main "$RELEASE_SHA"
-          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
 
       - name: Install Rust toolchain
         run: |
