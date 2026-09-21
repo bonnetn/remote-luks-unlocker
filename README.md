@@ -1,5 +1,7 @@
 # remote-luks-unlocker
 
+A deliberately simple, lightweight unlocker: roughly 400 source lines of code, a 2 MB binary, and minimal CPU and memory use.
+
 [![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
 
 Poll an SSH server and run the unlock command:
