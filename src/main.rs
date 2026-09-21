@@ -16,12 +16,30 @@ use tokio::{
     fs,
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
-    time::{Instant, sleep, timeout_at},
+    time::{Instant, sleep, timeout, timeout_at},
 };
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 const MAX_STDERR_BYTES: usize = 16 * 1024;
+
+fn parse_duration(value: &str) -> std::result::Result<Duration, String> {
+    let (number, suffix) = value.split_at(value.len().saturating_sub(1));
+    let multiplier = match suffix {
+        "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => return Err("duration must end in s, m, h, or d".to_owned()),
+    };
+    let number = number
+        .parse::<u64>()
+        .map_err(|_| "duration must start with a positive integer".to_owned())?;
+    let seconds = number
+        .checked_mul(multiplier)
+        .ok_or_else(|| "duration is too large".to_owned())?;
+    Ok(Duration::from_secs(seconds))
+}
 
 #[derive(Parser)]
 #[command(
@@ -63,9 +81,26 @@ struct Args {
     )]
     interval_seconds: u64,
 
-    /// Make one SSH attempt and exit instead of retrying indefinitely.
+    /// Delay between successful remote command runs in continuous mode.
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_SUCCESS_INTERVAL",
+        default_value = "1m",
+        value_parser = parse_duration
+    )]
+    success_interval: Duration,
+
+    /// Retry until the first successful unlock, then exit.
     #[arg(long, env = "REMOTE_LUKS_ONCE", default_value_t = false)]
     once: bool,
+
+    /// Maximum total runtime before exiting with an error, such as `10m`.
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_MAX_RUNTIME",
+        value_parser = parse_duration
+    )]
+    max_runtime: Option<Duration>,
 
     /// Maximum time allowed for one SSH connection and command attempt.
     #[arg(
@@ -101,7 +136,7 @@ async fn main() -> Result<()> {
         },
         result = async {
             let ssh_arguments = build_ssh_arguments(&args);
-            poll_until_connected(&args, &ssh, &ssh_arguments).await
+            run_polling(&args, &ssh, &ssh_arguments).await
         } => result,
     };
     if let Err(error) = &result {
@@ -134,26 +169,9 @@ async fn find_ssh() -> Result<PathBuf> {
 async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
 
-    if args.once {
-        return match connect_and_run(
-            ssh,
-            ssh_arguments,
-            Duration::from_secs(args.attempt_timeout_seconds),
-            &args.luks_password,
-        )
-        .await
-        {
-            Ok(()) => {
-                info!("SSH authentication and remote command succeeded");
-                Ok(())
-            }
-            Err(AttemptError::Retry(error) | AttemptError::Fatal(error)) => Err(error),
-        };
-    }
-
     loop {
         debug!(port = args.port, "attempting SSH authentication");
-        match connect_and_run(
+        let delay = match connect_and_run(
             ssh,
             ssh_arguments,
             Duration::from_secs(args.attempt_timeout_seconds),
@@ -163,15 +181,29 @@ async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString
         {
             Ok(()) => {
                 info!("SSH authentication and remote command succeeded");
-                return Ok(());
+                if args.once {
+                    return Ok(());
+                }
+                args.success_interval
             }
             Err(AttemptError::Retry(error)) => {
                 warn!(error = %error, "SSH attempt failed; will retry");
+                interval
             }
             Err(AttemptError::Fatal(error)) => return Err(error),
-        }
+        };
+        sleep(delay).await;
+    }
+}
 
-        sleep(interval).await;
+async fn run_polling(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
+    let polling = poll_until_connected(args, ssh, ssh_arguments);
+    if let Some(max_runtime) = args.max_runtime {
+        timeout(max_runtime, polling)
+            .await
+            .with_context(|| format!("SSH polling exceeded {max_runtime:?}"))?
+    } else {
+        polling.await
     }
 }
 
@@ -401,7 +433,9 @@ mod tests {
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: PathBuf::from("/tmp/known_hosts"),
             interval_seconds: 3,
+            success_interval: Duration::from_secs(60),
             once: false,
+            max_runtime: None,
             attempt_timeout_seconds: 7,
             command: "unlock-luks unlock".to_owned(),
         }
@@ -527,6 +561,8 @@ mod tests {
         assert_eq!(args.user, "root");
         assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
         assert!(!args.once);
+        assert_eq!(args.success_interval, Duration::from_secs(60));
+        assert_eq!(args.max_runtime, None);
         assert_eq!(args.command, "unlock-luks unlock");
     }
 
@@ -545,16 +581,22 @@ mod tests {
             "--known-hosts",
             "/tmp/known_hosts",
             "--once",
+            "--max-runtime",
+            "10m",
+            "--success-interval",
+            "2m",
         ])
         .expect("--once should parse");
 
         assert!(args.once);
+        assert_eq!(args.max_runtime, Some(Duration::from_secs(600)));
+        assert_eq!(args.success_interval, Duration::from_secs(120));
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn terminates_an_ssh_attempt_that_exceeds_its_timeout() {
         let script_path = env::temp_dir().join(format!(
-            "remote-luks-unlocker-test-{}-{}",
+            "remote-luks-unlocker-terminates-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -579,7 +621,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn bounds_password_delivery_by_the_attempt_timeout() {
         let script_path = env::temp_dir().join(format!(
-            "remote-luks-unlocker-test-{}-{}",
+            "remote-luks-unlocker-password-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -608,7 +650,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn once_mode_does_not_retry_a_failed_attempt() {
+    async fn once_mode_exits_after_success() {
         let script_path = env::temp_dir().join(format!(
             "remote-luks-unlocker-once-test-{}-{}",
             std::process::id(),
@@ -617,27 +659,49 @@ mod tests {
                 .expect("system clock is before the Unix epoch")
                 .as_nanos()
         ));
-        fs::write(&script_path, "#!/bin/sh\nexit 255\n").expect("failed to write fake SSH script");
+        fs::write(&script_path, "#!/bin/sh\nexit 0\n").expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
             .expect("failed to make fake SSH script executable");
         let mut args = test_args();
         args.once = true;
 
-        let result = tokio::time::timeout(
-            Duration::from_millis(200),
-            poll_until_connected(&args, &script_path, &[]),
-        )
-        .await
-        .expect("once mode should not wait for a retry");
+        let result = poll_until_connected(&args, &script_path, &[]).await;
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
-        assert!(result.is_err());
+        result.expect("once mode should exit after the first success");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn max_runtime_stops_continuous_mode() {
+        let script_path = env::temp_dir().join(format!(
+            "remote-luks-unlocker-runtime-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is before the Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&script_path, "#!/bin/sh\nexit 0\n").expect("failed to write fake SSH script");
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
+            .expect("failed to make fake SSH script executable");
+        let mut args = test_args();
+        args.max_runtime = Some(Duration::from_millis(50));
+
+        let result = run_polling(&args, &script_path, &[]).await;
+
+        fs::remove_file(&script_path).expect("failed to remove fake SSH script");
+        assert!(
+            result
+                .expect_err("continuous mode should stop at max runtime")
+                .to_string()
+                .contains("SSH polling exceeded")
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn bounds_ssh_stderr_output() {
         let script_path = env::temp_dir().join(format!(
-            "remote-luks-unlocker-test-{}-{}",
+            "remote-luks-unlocker-stderr-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -664,7 +728,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn completes_an_ssh_attempt_when_the_remote_command_succeeds() {
         let script_path = env::temp_dir().join(format!(
-            "remote-luks-unlocker-test-{}-{}",
+            "remote-luks-unlocker-success-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -687,7 +751,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn reports_ssh_stderr_when_the_remote_command_fails() {
         let script_path = env::temp_dir().join(format!(
-            "remote-luks-unlocker-test-{}-{}",
+            "remote-luks-unlocker-failure-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
