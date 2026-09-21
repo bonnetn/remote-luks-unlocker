@@ -8,6 +8,6 @@ cargo run -- \
   --port 2222 \
   --user root \
   --identity-file "$HOME/.ssh/id_ed25519" \
-  --password "$REMOTE_LUKS_PASSWORD" \
+  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD" \
   --command "unlock-luks unlock"
 ```

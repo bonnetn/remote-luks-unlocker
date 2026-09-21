@@ -210,7 +210,7 @@ fn public_key_authentication_without_host_key_verification() {
     let _lock = FIXTURE_LOCK.lock().unwrap();
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
-    args.extend(["--password".into(), PASSWORD.into()]);
+    args.extend(["--luks-password".into(), PASSWORD.into()]);
     let result = fixture
         .run_cli(&args, &[])
         .expect("polling client timed out");
@@ -226,7 +226,7 @@ fn identity_and_host_key_with_cli_options() {
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
     args.extend([
-        "--password".into(),
+        "--luks-password".into(),
         PASSWORD.into(),
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
@@ -253,7 +253,7 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_HOST", "127.0.0.1"),
         ("REMOTE_LUKS_PORT", port.as_str()),
         ("REMOTE_LUKS_USER", "root"),
-        ("REMOTE_LUKS_PASSWORD", PASSWORD),
+        ("REMOTE_LUKS_LUKS_PASSWORD", PASSWORD),
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
         ("REMOTE_LUKS_INTERVAL_SECONDS", "1"),
@@ -281,7 +281,7 @@ fn mismatched_host_key_is_rejected() {
     .expect("failed to write mismatched known_hosts fixture");
     let mut args = fixture.common_args();
     args.extend([
-        "--password".into(),
+        "--luks-password".into(),
         PASSWORD.into(),
         "--identity-file".into(),
         fixture.identity_file().to_string_lossy().into_owned(),

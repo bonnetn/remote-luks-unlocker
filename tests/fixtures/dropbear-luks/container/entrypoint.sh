@@ -22,8 +22,7 @@ fi
 cp "$authorized_keys" /root/.ssh/authorized_keys
 chmod 0600 /root/.ssh/authorized_keys
 
-# The Rust integration test authenticates through OpenSSH password auth. Keep
-# the key-based login too, since it is useful for debugging the fixture.
+# The Rust integration test authenticates through an OpenSSH public key.
 printf 'root:%s\n' "$passphrase" | chpasswd
 
 if [ ! -f "$state_file" ]; then

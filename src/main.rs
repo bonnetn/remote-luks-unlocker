@@ -23,7 +23,7 @@ use tracing_subscriber::EnvFilter;
 #[command(
     author,
     version,
-    about = "Poll an SSH endpoint and authenticate with a password"
+    about = "Poll an SSH endpoint and run a LUKS unlock command"
 )]
 struct Args {
     /// Hostname or IP address of the machine running Dropbear/OpenSSH.
@@ -31,16 +31,16 @@ struct Args {
     host: String,
 
     /// SSH port.
-    #[arg(short = 'P', long, env = "REMOTE_LUKS_PORT", default_value_t = 22)]
+    #[arg(short = 'p', long, env = "REMOTE_LUKS_PORT", default_value_t = 22)]
     port: u16,
 
     /// SSH username.
-    #[arg(short, long, env = "REMOTE_LUKS_USER")]
+    #[arg(short = 'l', long, env = "REMOTE_LUKS_USER")]
     user: String,
 
     /// Passphrase sent to the remote unlock command.
-    #[arg(short, long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
-    password: String,
+    #[arg(long, env = "REMOTE_LUKS_LUKS_PASSWORD", hide_env_values = true)]
+    luks_password: String,
 
     /// Required private SSH identity file whose public key is authorized on the server.
     #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
@@ -148,7 +148,7 @@ async fn poll_until_connected(
                 ssh,
                 ssh_arguments,
                 Duration::from_secs(args.attempt_timeout_seconds),
-                &args.password,
+                &args.luks_password,
             )
             .await
             {
@@ -182,7 +182,7 @@ async fn connect_and_run(
     ssh: &Path,
     arguments: &[String],
     attempt_timeout: Duration,
-    password: &str,
+    luks_password: &str,
 ) -> Result<()> {
     debug!("starting SSH child process");
     let mut child = Command::new(ssh)
@@ -195,13 +195,13 @@ async fn connect_and_run(
         .with_context(|| format!("failed to execute {}", ssh.display()))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(password.as_bytes()).await {
+        if let Err(error) = stdin.write_all(luks_password.as_bytes()).await {
             terminate_child(&mut child).await;
-            return Err(error).context("failed to send the password to the SSH command");
+            return Err(error).context("failed to send the LUKS passphrase to the remote command");
         }
         if let Err(error) = stdin.write_all(b"\n").await {
             terminate_child(&mut child).await;
-            return Err(error).context("failed to terminate password input");
+            return Err(error).context("failed to terminate LUKS passphrase input");
         }
     }
 
@@ -292,7 +292,7 @@ mod tests {
             host: "example.test".to_owned(),
             port: 2222,
             user: "root".to_owned(),
-            password: "secret".to_owned(),
+            luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: None,
             interval_seconds: 3,
@@ -379,16 +379,20 @@ mod tests {
             "remote-luks-unlocker",
             "--host",
             "example.test",
-            "--user",
+            "-l",
             "root",
-            "--password",
+            "--luks-password",
             "secret",
-            "--identity-file",
+            "-i",
             "/tmp/id_ed25519",
+            "-p",
+            "2222",
         ])
         .expect("default CLI arguments should parse");
 
         assert_eq!(args.attempt_timeout_seconds, 30);
+        assert_eq!(args.port, 2222);
+        assert_eq!(args.user, "root");
     }
 
     #[tokio::test(flavor = "current_thread")]
