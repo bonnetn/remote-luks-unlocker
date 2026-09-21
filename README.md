@@ -109,13 +109,6 @@ sequenceDiagram
     S-->>C: Unlock succeeds
 ```
 
-- Uses the system `ssh` command.
-- Checks the server key.
-- Logs in with the private key. SSH password login is off.
-- Runs the unlock command.
-- Sends the LUKS passphrase to the command's standard input.
-- Keeps retrying while the server is down.
-
 The default command is `unlock-luks unlock`. For Debian or Ubuntu
 `dropbear-initramfs`, use `--command cryptroot-unlock`.
 
