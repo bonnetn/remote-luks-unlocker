@@ -59,6 +59,21 @@ podman run --rm \
 See [server setup](docs/dropbear-initramfs.md) before trying this on a real
 machine.
 
+For cron, use `--once` with `--max-runtime` to retry until the first successful
+unlock, then exit. The example below retries for up to ten minutes, returning
+success when the unlock completes and a nonzero status if the timeout expires:
+
+```sh
+remote-luks-unlocker \
+  --host server.example.com \
+  --user root \
+  --identity-file "$HOME/.ssh/remote-luks" \
+  --known-hosts "$HOME/.config/remote-luks/known_hosts" \
+  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD" \
+  --once \
+  --max-runtime 10m
+```
+
 ## Quick start
 
 This example assumes the server already has `dropbear-initramfs` configured,
