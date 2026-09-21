@@ -148,17 +148,17 @@ a running machine.
 Every option is also available as an environment variable. Run
 `remote-luks-unlocker --help` for the full list.
 
-| Option | Environment variable | Default |
-| --- | --- | --- |
-| `--host` | `REMOTE_LUKS_HOST` | required |
-| `--port` | `REMOTE_LUKS_PORT` | `22` |
-| `--user` | `REMOTE_LUKS_USER` | required |
-| `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required |
-| `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | required |
-| `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required |
-| `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` |
-| `--interval` | `REMOTE_LUKS_INTERVAL` | `1s` |
-| `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` |
-| `--once` | `REMOTE_LUKS_ONCE` | continuous |
-| `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited |
-| `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` |
+| Option | Environment variable | Default | What it does |
+| --- | --- | --- | --- |
+| `--host` | `REMOTE_LUKS_HOST` | required | Server hostname or IP address |
+| `--port` | `REMOTE_LUKS_PORT` | `22` | SSH port |
+| `--user` | `REMOTE_LUKS_USER` | required | SSH username |
+| `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
+| `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | required | File used to verify the server key |
+| `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
+| `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` | Remote command to run |
+| `--interval` | `REMOTE_LUKS_INTERVAL` | `1s` | Delay between retry attempts |
+| `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Delay before a follow-up unlock attempt |
+| `--once` | `REMOTE_LUKS_ONCE` | continuous | Exit after the first successful unlock |
+| `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Stop retrying after this duration |
+| `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time for one SSH attempt |
