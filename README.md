@@ -1,7 +1,6 @@
 # Unlock an encrypted Linux server over SSH
 
 [![CI](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml)
-[![License](https://img.shields.io/crates/l/remote-luks-unlocker)](https://github.com/bonnetn/remote-luks-unlocker/blob/main/LICENSE)
 [![Release](https://img.shields.io/github/v/release/bonnetn/remote-luks-unlocker)](https://github.com/bonnetn/remote-luks-unlocker/releases)
 [![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
 
@@ -15,7 +14,8 @@ when a server has rebooted and nobody is there to type the passphrase at the
 console.
 
 The client does not set up LUKS, install Dropbear, or change your bootloader.
-Set up the server first: [Dropbear initramfs setup](docs/dropbear-initramfs.md).
+The binary's only external runtime dependency is the system OpenSSH `ssh`
+command. Set up the server first: [Dropbear initramfs setup](docs/dropbear-initramfs.md).
 
 ## TL;DR
 
@@ -56,25 +56,7 @@ podman run --rm \
   ghcr.io/bonnetn/remote-luks-unlocker
 ```
 
-See [server setup](docs/dropbear-initramfs.md) before trying this on a real
-machine.
-
-For cron, use `--once` with `--max-runtime` to retry until the first successful
-unlock, then exit. The example below retries for up to ten minutes, returning
-success when the unlock completes and a nonzero status if the timeout expires:
-
-```sh
-remote-luks-unlocker \
-  --host server.example.com \
-  --user root \
-  --identity-file "$HOME/.ssh/remote-luks" \
-  --known-hosts "$HOME/.config/remote-luks/known_hosts" \
-  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD" \
-  --once \
-  --max-runtime 10m
-```
-
-## Quick start
+## How to run it
 
 This example assumes the server already has `dropbear-initramfs` configured,
 listens on port `2222` during initramfs, and accepts the public key in
@@ -106,77 +88,36 @@ remote-luks-unlocker \
 ```
 
 It keeps trying while SSH is unavailable. When SSH comes up, it authenticates,
-sends the passphrase to `cryptroot-unlock`, and exits successfully when the
-remote command returns success.
+sends the passphrase to `cryptroot-unlock`, and continues running after a
+successful unlock. By default it waits one minute between successful runs.
 
-## What the client does
+For a long-running service, use systemd or another supervisor. The service
+should start after networking is available, be able to read the identity and
+`known_hosts` files, receive the required options or `REMOTE_LUKS_*` variables,
+and keep the LUKS passphrase out of the unit file and source control.
 
-The client does this:
+For cron, use `--once` with `--max-runtime` to retry until the first successful
+unlock, then exit. This example retries for up to ten minutes, returning
+success when the unlock completes and a nonzero status if the timeout expires:
 
-```mermaid
-sequenceDiagram
-    participant C as Client host
-    participant S as Server initramfs
-    C->>S: SSH with private key
-    Note over C: Verify S host key against known_hosts
-    C->>S: Run unlock command
-    C->>S: Passphrase on command stdin
-    S-->>C: Unlock succeeds
+```sh
+remote-luks-unlocker \
+  --host server.example.com \
+  --user root \
+  --identity-file "$HOME/.ssh/remote-luks" \
+  --known-hosts "$HOME/.config/remote-luks/known_hosts" \
+  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD" \
+  --once \
+  --max-runtime 10m
 ```
 
 The default command is `unlock-luks unlock`. For Debian or Ubuntu
 `dropbear-initramfs`, use `--command cryptroot-unlock`.
 
-## Run it with systemd
-
-For unattended operation, run one long-lived client instance under systemd,
-cron, or another supervisor. The client already waits and retries; do not
-start a new copy every minute.
-
-Make sure the service:
-
-- starts after networking is available;
-- can read the identity and `known_hosts` files;
-- receives the required options or `REMOTE_LUKS_*` variables;
-- keeps the LUKS passphrase out of the unit file and source control; and
-- restarts the client if it exits unexpectedly.
-
 ## Server setup
 
-See [Dropbear initramfs setup](docs/dropbear-initramfs.md). It covers:
-
-- installing `cryptsetup-initramfs` and `dropbear-initramfs`;
-- adding a restricted SSH key;
-- setting up the initramfs network;
-- rebuilding the initramfs; and
-- checking the initramfs host key.
-
-The guide links to the [Debian cryptsetup initramfs
-documentation](https://cryptsetup-team.pages.debian.net/cryptsetup/README.initramfs.html),
-[Debian's remote root unlock notes](https://cryptsetup-team.pages.debian.net/cryptsetup/README.Debian.html#_remotely_unlock_encrypted_rootfs),
-and the [Dropbear initramfs package
-documentation](https://sources.debian.org/src/dropbear/2018.76-5%2Bdeb10u1/debian/README.initramfs/).
-
-## Docker or Podman
-
-The image includes the client and OpenSSH. Mount both key files read-only:
-
-```sh
-podman run --rm \
-  --user "$(id -u):$(id -g)" \
-  -v "$HOME/.ssh/remote-luks:/run/ssh/id_ed25519:ro" \
-  -v "$HOME/.config/remote-luks/known_hosts:/run/ssh/known_hosts:ro" \
-  -e REMOTE_LUKS_HOST=server.example.com \
-  -e REMOTE_LUKS_PORT=2222 \
-  -e REMOTE_LUKS_USER=root \
-  -e REMOTE_LUKS_IDENTITY_FILE=/run/ssh/id_ed25519 \
-  -e REMOTE_LUKS_KNOWN_HOSTS=/run/ssh/known_hosts \
-  -e REMOTE_LUKS_COMMAND=cryptroot-unlock \
-  -e REMOTE_LUKS_LUKS_PASSWORD \
-  ghcr.io/bonnetn/remote-luks-unlocker
-```
-
-Use `docker` instead of `podman` if needed.
+See the [Dropbear initramfs setup guide](docs/dropbear-initramfs.md) before
+trying this on a real machine.
 
 ## Security
 
@@ -211,31 +152,7 @@ Every option is also available as an environment variable. Run
 | `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required |
 | `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` |
 | `--interval-seconds` | `REMOTE_LUKS_INTERVAL_SECONDS` | `1` |
+| `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` |
+| `--once` | `REMOTE_LUKS_ONCE` | continuous |
+| `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited |
 | `--attempt-timeout-seconds` | `REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS` | `30` |
-
-## Troubleshooting
-
-- **No SSH:** check the console, initramfs network, NIC driver, port, and
-  firewall.
-- **Host-key error:** the initramfs usually has a different key from the normal
-  system. Use a separate verified `known_hosts` file.
-- **Key rejected:** check the public key, file permissions, username, and key
-  path. Rebuild the initramfs after changing Dropbear files.
-- **Unlock fails:** run the command manually. Check `crypttab` and
-  `cryptroot-unlock`. More than one encrypted device may need more than one
-  unlock.
-- **More client logs:** set `RUST_LOG=remote_luks_unlocker=debug`.
-
-## Compatibility and development
-
-The client needs a Unix-like host with the system OpenSSH `ssh` command. The
-server guide targets Debian and Ubuntu with `initramfs-tools`. Other systems
-may work, but are not tested here. The repository's Podman fixture tests SSH
-and the unlock command; it does not attach a real LUKS device.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for tests, container checks, and
-development details.
-
-## License
-
-MIT. See [`LICENSE`](LICENSE).
