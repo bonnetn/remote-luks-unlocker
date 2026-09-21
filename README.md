@@ -96,7 +96,7 @@ success.
 
 ## What the client does
 
-The flow is simple:
+The client does this:
 
 ```mermaid
 sequenceDiagram
@@ -109,27 +109,97 @@ sequenceDiagram
     S-->>C: Unlock succeeds
 ```
 
-1. Run the system OpenSSH `ssh` client.
-2. Check the server key against the required `known_hosts` file.
-3. Authenticate with the supplied private key. SSH password authentication is
-   disabled.
-4. Run the remote command and write the LUKS passphrase to its standard input.
-5. Retry temporary SSH transport failures until the unlock succeeds.
+- Uses the system `ssh` command.
+- Checks the server key.
+- Logs in with the private key. SSH password login is off.
+- Runs the unlock command.
+- Sends the LUKS passphrase to the command's standard input.
+- Keeps retrying while the server is down.
 
-The default command is `unlock-luks unlock`, which is intended for a small
-server-side wrapper. Debian-family initramfs setups normally use
-`--command cryptroot-unlock`.
+The default command is `unlock-luks unlock`. For Debian or Ubuntu
+`dropbear-initramfs`, use `--command cryptroot-unlock`.
+
+## Run it with systemd
+
+If the client should run all the time, use a systemd service. The client
+already waits and retries, so systemd only needs to start it and restart it if
+it exits.
+
+Create a local account and config directory:
+
+```sh
+sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin remote-luks
+sudo install -d -o remote-luks -g remote-luks -m 700 /etc/remote-luks-unlocker
+sudo install -o remote-luks -g remote-luks -m 600 "$HOME/.ssh/remote-luks" \
+  /etc/remote-luks-unlocker/id_ed25519
+sudo install -o remote-luks -g remote-luks -m 600 \
+  "$HOME/.config/remote-luks/known_hosts" \
+  /etc/remote-luks-unlocker/known_hosts
+```
+
+Create `/etc/remote-luks-unlocker/environment`:
+
+```text
+REMOTE_LUKS_HOST=server.example.com
+REMOTE_LUKS_PORT=2222
+REMOTE_LUKS_USER=root
+REMOTE_LUKS_IDENTITY_FILE=/etc/remote-luks-unlocker/id_ed25519
+REMOTE_LUKS_KNOWN_HOSTS=/etc/remote-luks-unlocker/known_hosts
+REMOTE_LUKS_COMMAND=cryptroot-unlock
+REMOTE_LUKS_LUKS_PASSWORD=put-the-passphrase-here
+```
+
+Protect it. The passphrase is in this file:
+
+```sh
+sudo chown remote-luks:remote-luks /etc/remote-luks-unlocker/environment
+sudo chmod 600 /etc/remote-luks-unlocker/environment
+```
+
+Create `/etc/systemd/system/remote-luks-unlocker.service`:
+
+```ini
+[Unit]
+Description=Unlock remote LUKS server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=remote-luks
+EnvironmentFile=/etc/remote-luks-unlocker/environment
+ExecStart=/usr/local/bin/remote-luks-unlocker
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then start it:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now remote-luks-unlocker.service
+sudo journalctl -u remote-luks-unlocker.service -f
+```
+
+Put the client binary at `/usr/local/bin/remote-luks-unlocker`, or change
+`ExecStart` to its real path. Check the service logs before testing a reboot.
 
 ## Server setup
 
-See [Dropbear initramfs setup](docs/dropbear-initramfs.md) for a practical
-Debian/Ubuntu example. It covers the parts that are easy to get wrong:
+See [Dropbear initramfs setup](docs/dropbear-initramfs.md). It covers:
 
 - installing `cryptsetup-initramfs` and `dropbear-initramfs`;
-- adding a dedicated SSH key with a forced unlock command;
-- getting the network driver and network configuration into the initramfs;
+- adding a restricted SSH key;
+- setting up the initramfs network;
 - rebuilding the initramfs; and
-- using the initramfs host key, rather than the normal system SSH host key.
+- checking the initramfs host key.
 
 The guide links to the [Debian cryptsetup initramfs
 documentation](https://cryptsetup-team.pages.debian.net/cryptsetup/README.initramfs.html),
@@ -139,7 +209,7 @@ documentation](https://sources.debian.org/src/dropbear/2018.76-5%2Bdeb10u1/debia
 
 ## Docker or Podman
 
-The container includes the client and OpenSSH. Mount both key files read-only:
+The image includes the client and OpenSSH. Mount both key files read-only:
 
 ```sh
 podman run --rm \
@@ -156,29 +226,25 @@ podman run --rm \
   ghcr.io/bonnetn/remote-luks-unlocker
 ```
 
-Replace `podman` with `docker` if that is what you use.
+Use `docker` instead of `podman` if needed.
 
 ## Security
 
-The client verifies the SSH host key and uses public-key authentication. Keep
-those two checks enabled. In particular, do not replace `known_hosts` with
-`/dev/null` or add `StrictHostKeyChecking=no` just to make a first connection
-work.
+Keep host-key checking on. Do not use `/dev/null` for `known_hosts`. Do not use
+`StrictHostKeyChecking=no`.
 
-Use a key made only for this purpose. In the server's `authorized_keys`, limit
-it to the unlock command and disable port forwarding, agent forwarding, X11
-forwarding, and PTY allocation. Put the initramfs SSH port on a management
-network or firewall it to trusted sources.
+Use a key made only for this job. Restrict it in `authorized_keys` to the
+unlock command. Disable forwarding and PTY access. Firewall the initramfs SSH
+port to a management network.
 
-The passphrase is needed in memory on both sides. The client sends it to the
-remote command on standard input; it is not used as the SSH password. Passing
-it as a command-line argument or environment variable can expose it to local
-process inspection, so use a secret manager or a tightly controlled client
-host. Never commit it to a script or repository.
+The client sends the passphrase to the remote command on standard input. It is
+not the SSH password. The passphrase is in memory on the client and server.
+Do not put it in source control. Protect the environment file if you use the
+systemd setup above.
 
-Keep console or provider recovery access and test a complete reboot before
-depending on unattended reboots. LUKS does not protect an unencrypted
-`/boot`, the initramfs, firmware, or a machine that is already running.
+Keep console or provider recovery access. Test a full reboot before relying on
+this. LUKS does not protect an unencrypted `/boot`, the initramfs, firmware, or
+a running machine.
 
 ## Configuration
 
@@ -199,25 +265,23 @@ Every option is also available as an environment variable. Run
 
 ## Troubleshooting
 
-- **No SSH connection:** check the server console, initramfs network settings,
-  NIC driver, port, and firewall before debugging the client.
-- **Host-key error:** the initramfs usually has a different host key from the
-  normal operating system. Use a separate, verified `known_hosts` file.
-- **Public-key authentication error:** check the complete public key,
-  permissions, username, and the key path used by Dropbear. Rebuild the
-  initramfs after changing its files.
-- **SSH works but unlock fails:** run the command manually and check the
-  `crypttab` mapping and `cryptroot-unlock` output. Multiple encrypted devices
-  may need more than one unlock attempt.
-- **Need more client detail:** set `RUST_LOG=remote_luks_unlocker=debug`.
+- **No SSH:** check the console, initramfs network, NIC driver, port, and
+  firewall.
+- **Host-key error:** the initramfs usually has a different key from the normal
+  system. Use a separate verified `known_hosts` file.
+- **Key rejected:** check the public key, file permissions, username, and key
+  path. Rebuild the initramfs after changing Dropbear files.
+- **Unlock fails:** run the command manually. Check `crypttab` and
+  `cryptroot-unlock`. More than one encrypted device may need more than one
+  unlock.
+- **More client logs:** set `RUST_LOG=remote_luks_unlocker=debug`.
 
 ## Compatibility and development
 
-The tested client environment is a Unix-like host with the system OpenSSH
-`ssh` executable. The repository tests use a rootless Podman Dropbear fixture;
-they do not attach a privileged LUKS device. The server guide targets Debian
-and Ubuntu with `initramfs-tools`. Other distributions and initramfs
-generators may work, but their setup is not tested here.
+The client needs a Unix-like host with the system OpenSSH `ssh` command. The
+server guide targets Debian and Ubuntu with `initramfs-tools`. Other systems
+may work, but are not tested here. The repository's Podman fixture tests SSH
+and the unlock command; it does not attach a real LUKS device.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for tests, container checks, and
 development details.
