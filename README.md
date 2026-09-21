@@ -3,10 +3,9 @@
 [![CI](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml)
 [![License](https://img.shields.io/crates/l/remote-luks-unlocker)](https://github.com/bonnetn/remote-luks-unlocker/blob/main/LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/bonnetn/remote-luks-unlocker)](https://github.com/bonnetn/remote-luks-unlocker/releases)
+[![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
 
 A deliberately simple, lightweight unlocker: roughly 400 source lines of code, a 2 MB binary, and minimal CPU and memory use.
-
-[![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
 
 Poll an SSH server and run the unlock command:
 
