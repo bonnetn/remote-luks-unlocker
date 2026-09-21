@@ -660,7 +660,8 @@ mod tests {
                 .expect("system clock is before the Unix epoch")
                 .as_nanos()
         ));
-        fs::write(&script_path, "#!/bin/sh\nexit 0\n").expect("failed to write fake SSH script");
+        fs::write(&script_path, "#!/bin/sh\nread password\nexit 0\n")
+            .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
             .expect("failed to make fake SSH script executable");
         let mut args = test_args();
