@@ -58,7 +58,20 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
+      - name: Check for changes since the latest release
+        id: changes
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [ -z "$latest_tag" ] || ! git diff --quiet "$latest_tag..HEAD"; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            echo "Changes found since ${latest_tag:-the initial commit}."
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo "No changes found since $latest_tag; skipping release."
+          fi
+
       - name: Release and publish patch version
+        if: steps.changes.outputs.changed == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
