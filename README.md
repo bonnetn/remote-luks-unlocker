@@ -91,8 +91,8 @@ remote-luks-unlocker \
 ```
 
 It keeps trying while SSH is unavailable. When SSH comes up, it authenticates,
-sends the passphrase to `cryptroot-unlock`, and exits when the command reports
-success.
+sends the passphrase to `cryptroot-unlock`, and exits successfully when the
+remote command returns success.
 
 ## What the client does
 
@@ -121,40 +121,9 @@ The default command is `unlock-luks unlock`. For Debian or Ubuntu
 
 ## Run it with systemd
 
-If the client should run all the time, use a systemd service. The client
-already waits and retries, so systemd only needs to start it and restart it if
-it exits.
-
-Create a local account and config directory:
-
-```sh
-sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin remote-luks
-sudo install -d -o remote-luks -g remote-luks -m 700 /etc/remote-luks-unlocker
-sudo install -o remote-luks -g remote-luks -m 600 "$HOME/.ssh/remote-luks" \
-  /etc/remote-luks-unlocker/id_ed25519
-sudo install -o remote-luks -g remote-luks -m 600 \
-  "$HOME/.config/remote-luks/known_hosts" \
-  /etc/remote-luks-unlocker/known_hosts
-```
-
-Create `/etc/remote-luks-unlocker/environment`:
-
-```text
-REMOTE_LUKS_HOST=server.example.com
-REMOTE_LUKS_PORT=2222
-REMOTE_LUKS_USER=root
-REMOTE_LUKS_IDENTITY_FILE=/etc/remote-luks-unlocker/id_ed25519
-REMOTE_LUKS_KNOWN_HOSTS=/etc/remote-luks-unlocker/known_hosts
-REMOTE_LUKS_COMMAND=cryptroot-unlock
-REMOTE_LUKS_LUKS_PASSWORD=put-the-passphrase-here
-```
-
-Protect it. The passphrase is in this file:
-
-```sh
-sudo chown remote-luks:remote-luks /etc/remote-luks-unlocker/environment
-sudo chmod 600 /etc/remote-luks-unlocker/environment
-```
+For unattended operation, run the client as a systemd service. The client
+already waits and retries. Put the environment variables in a protected
+`EnvironmentFile`; do not put the passphrase directly in the unit file.
 
 Create `/etc/systemd/system/remote-luks-unlocker.service`:
 
@@ -180,16 +149,16 @@ ProtectHome=true
 WantedBy=multi-user.target
 ```
 
-Then start it:
+Then enable it:
 
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now remote-luks-unlocker.service
-sudo journalctl -u remote-luks-unlocker.service -f
 ```
 
-Put the client binary at `/usr/local/bin/remote-luks-unlocker`, or change
-`ExecStart` to its real path. Check the service logs before testing a reboot.
+Use a dedicated service account and protect the private key, `known_hosts`,
+and environment file. Check the logs with `journalctl` before testing a
+reboot.
 
 ## Server setup
 
