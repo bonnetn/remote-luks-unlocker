@@ -683,7 +683,8 @@ mod tests {
                 .expect("system clock is before the Unix epoch")
                 .as_nanos()
         ));
-        fs::write(&script_path, "#!/bin/sh\nexit 0\n").expect("failed to write fake SSH script");
+        fs::write(&script_path, "#!/bin/sh\nread password\nexit 0\n")
+            .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
             .expect("failed to make fake SSH script executable");
         let mut args = test_args();
@@ -712,7 +713,7 @@ mod tests {
         ));
         fs::write(
             &script_path,
-            "#!/bin/sh\nyes x | head -c 32768 >&2\nexit 1\n",
+            "#!/bin/sh\nread password\nyes x | head -c 32768 >&2\nexit 1\n",
         )
         .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
@@ -762,7 +763,7 @@ mod tests {
         ));
         fs::write(
             &script_path,
-            "#!/bin/sh\necho 'connection refused' >&2\nexit 255\n",
+            "#!/bin/sh\nread password\necho 'connection refused' >&2\nexit 255\n",
         )
         .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
