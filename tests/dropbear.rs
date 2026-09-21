@@ -202,7 +202,7 @@ fn public_key_authentication_with_host_key_verification() {
 }
 
 #[test]
-fn identity_and_host_key_with_cli_options() {
+fn fatal_remote_command_failure_exits_without_retrying() {
     let _lock = FIXTURE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -213,11 +213,13 @@ fn identity_and_host_key_with_cli_options() {
         PASSWORD.into(),
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
+        "--command".into(),
+        "unlock-luks invalid".into(),
     ]);
     let result = Fixture::run_cli(&args, &[]).expect("polling client timed out");
     assert!(
-        result.status.success(),
-        "CLI key/host-key flow failed: {result:?}"
+        !result.status.success(),
+        "fatal remote command failure was retried: {result:?}"
     );
 }
 
