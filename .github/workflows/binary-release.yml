@@ -38,7 +38,7 @@ jobs:
             apt-package: gcc-aarch64-linux-gnu
             linker: aarch64-linux-gnu-gcc
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-15
             apt-package: ""
             linker: clang
 
