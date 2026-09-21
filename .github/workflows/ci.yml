@@ -52,16 +52,7 @@ jobs:
           podman info
 
       - name: Install cargo-deny
-        run: |
-          archive="$RUNNER_TEMP/cargo-deny.tar.gz"
-          url="https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"
-          curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$url"
-          echo '0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f  '"$archive" | sha256sum --check --status
-          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP"
-          install --mode 0755 \
-            "$RUNNER_TEMP/cargo-deny-0.19.0-x86_64-unknown-linux-musl/cargo-deny" \
-            "$HOME/.cargo/bin/cargo-deny"
-          cargo deny --version
+        run: cargo install --locked --version 0.19.0 cargo-deny
 
       - name: Check formatting
         run: cargo fmt --all -- --check
