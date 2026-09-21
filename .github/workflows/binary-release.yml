@@ -24,17 +24,23 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
             apt-package: gcc
             linker: gcc
           - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04
             apt-package: gcc-aarch64-linux-gnu
             linker: aarch64-linux-gnu-gcc
+          - target: aarch64-apple-darwin
+            os: macos-14
+            apt-package: ""
+            linker: cc
 
     steps:
       - name: Check out release source
@@ -45,6 +51,7 @@ jobs:
           persist-credentials: false
 
       - name: Install cross compiler
+        if: matrix.apt-package != ''
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes "${{ matrix.apt-package }}"
