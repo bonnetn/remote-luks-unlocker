@@ -69,7 +69,11 @@ struct Args {
     attempt_timeout_seconds: u64,
 
     /// Remote command to run after authentication.
-    #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "true")]
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_COMMAND",
+        default_value = "unlock-luks unlock"
+    )]
     command: String,
 }
 
@@ -393,6 +397,7 @@ mod tests {
         assert_eq!(args.attempt_timeout_seconds, 30);
         assert_eq!(args.port, 2222);
         assert_eq!(args.user, "root");
+        assert_eq!(args.command, "unlock-luks unlock");
     }
 
     #[tokio::test(flavor = "current_thread")]

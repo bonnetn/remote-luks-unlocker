@@ -132,8 +132,6 @@ impl Fixture {
             "1".into(),
             "--attempt-timeout-seconds".into(),
             "10".into(),
-            "--command".into(),
-            "unlock-luks unlock".into(),
         ]
     }
 }
