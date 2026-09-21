@@ -5,7 +5,9 @@
 Poll an SSH server and run the unlock command:
 
 ```sh
-cargo run -- \
+cargo install remote-luks-unlocker
+
+remote-luks-unlocker \
   --host 127.0.0.1 \
   --port 2222 \
   --user root \
