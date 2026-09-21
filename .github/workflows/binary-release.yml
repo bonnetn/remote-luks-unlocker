@@ -111,15 +111,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$RELEASE_TAG" \
               -f name="$RELEASE_TAG" \
               -f body="Release assets for $RELEASE_TAG." \
-              || gh release view "$RELEASE_TAG" >/dev/null
+              || gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
 
       - name: Upload binaries and checksums
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+        run: gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" dist/* --clobber
