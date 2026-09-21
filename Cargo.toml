@@ -2,6 +2,14 @@
 name = "remote-luks-unlocker"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Poll an SSH endpoint and run a remote LUKS unlock command."
+license = "MIT"
+repository = "https://github.com/bonnetn/remote-luks-unlocker"
+readme = "README.md"
+keywords = ["ssh", "luks", "dropbear", "disk-encryption", "polling"]
+categories = ["command-line-utilities", "network-programming"]
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 [dependencies]
 anyhow = "1"
