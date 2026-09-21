@@ -93,10 +93,8 @@ async fn main() -> Result<()> {
             Err(anyhow!("interrupted"))
         },
         result = async {
-            let endpoint = resolve_endpoint(&args.host, args.port).await?;
-            debug!(addresses = ?endpoint, "resolved SSH endpoint");
             let ssh_arguments = build_ssh_arguments(&args);
-            poll_until_connected(&args, &ssh, &ssh_arguments, &endpoint).await
+            poll_until_connected(&args, &ssh, &ssh_arguments).await
         } => result,
     };
     if let Err(error) = &result {
@@ -134,16 +132,22 @@ async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
         .map(Iterator::collect::<Vec<_>>)
 }
 
-async fn poll_until_connected(
-    args: &Args,
-    ssh: &Path,
-    ssh_arguments: &[String],
-    endpoint: &[SocketAddr],
-) -> Result<()> {
+async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[String]) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
 
     loop {
-        let port_open = port_is_open(endpoint).await;
+        let endpoint = match resolve_endpoint(&args.host, args.port).await {
+            Ok(endpoint) => {
+                debug!(addresses = ?endpoint, "resolved SSH endpoint");
+                endpoint
+            }
+            Err(error) => {
+                warn!(error = %error, ?interval, "could not resolve SSH endpoint; will retry");
+                sleep(interval).await;
+                continue;
+            }
+        };
+        let port_open = port_is_open(&endpoint).await;
         if port_open {
             debug!(
                 port = args.port,
@@ -233,15 +237,13 @@ async fn connect_and_run(
     if status.success() {
         Ok(())
     } else {
-        let stderr = str::from_utf8(&stderr)
-            .map(str::trim)
-            .unwrap_or("SSH produced invalid UTF-8 on stderr");
+        let stderr =
+            str::from_utf8(&stderr).map_or("SSH produced invalid UTF-8 on stderr", str::trim);
         debug!(%status, stderr, "SSH child process failed");
         if stderr.is_empty() {
             bail!("ssh exited with status {status}")
-        } else {
-            bail!("ssh exited with status {status}: {stderr}")
         }
+        bail!("ssh exited with status {status}: {stderr}")
     }
 }
 
