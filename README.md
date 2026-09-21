@@ -1,5 +1,7 @@
 # remote-luks-unlocker
 
+[![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
+
 Poll an SSH server and run the unlock command:
 
 ```sh
