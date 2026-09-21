@@ -92,8 +92,12 @@ jobs:
           IMAGE: ${{ env.IMAGE_NAME }}:${{ env.RELEASE_TAG }}
           LATEST_IMAGE: ${{ env.IMAGE_NAME }}:latest
         run: |
-          podman manifest create "$IMAGE" "${IMAGE}-amd64" "${IMAGE}-arm64"
+          podman manifest create "$IMAGE"
+          podman manifest add "$IMAGE" "docker://${IMAGE}-amd64"
+          podman manifest add "$IMAGE" "docker://${IMAGE}-arm64"
           podman manifest push --all "$IMAGE" "docker://${IMAGE}"
-          podman manifest create "$LATEST_IMAGE" "${IMAGE}-amd64" "${IMAGE}-arm64"
+          podman manifest create "$LATEST_IMAGE"
+          podman manifest add "$LATEST_IMAGE" "docker://${IMAGE}-amd64"
+          podman manifest add "$LATEST_IMAGE" "docker://${IMAGE}-arm64"
           podman manifest push --all "$LATEST_IMAGE" "docker://${LATEST_IMAGE}"
           podman manifest inspect "docker://${LATEST_IMAGE}"
