@@ -113,8 +113,9 @@ jobs:
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
+                --verify-tag \
                 --title "$RELEASE_TAG" \
-                --generate-notes \
+                --notes "Release assets for $RELEASE_TAG." \
               || gh release view "$RELEASE_TAG" >/dev/null
           fi
 
