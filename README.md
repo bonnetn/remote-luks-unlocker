@@ -160,6 +160,6 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` | Remote command to run |
 | `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
 | `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Wait after success before running the command again |
-| `--once` | `REMOTE_LUKS_ONCE` | `false` | Exit after the first successful unlock |
+| `--once` | `REMOTE_LUKS_ONCE` | not set | Exit after the first successful unlock |
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |
 | `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time allowed for one SSH connection and command |
