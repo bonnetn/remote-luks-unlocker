@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
+      actions: write
       contents: write
 
     env:
@@ -73,3 +74,18 @@ jobs:
         run: |
           test -n "$CARGO_REGISTRY_TOKEN"
           cargo release patch --execute --no-confirm
+
+      - name: Start binary and container releases
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag=$(git describe --tags --abbrev=0)
+          gh workflow run binary-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field "tag=$release_tag"
+          gh workflow run container-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field "tag=$release_tag"
