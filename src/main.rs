@@ -72,14 +72,14 @@ struct Args {
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
     known_hosts: PathBuf,
 
-    /// Delay between failed SSH attempts, such as `1s` or `1m`.
+    /// Delay after a failed SSH attempt before retrying, such as `1s` or `1m`.
     #[arg(
         long,
-        env = "REMOTE_LUKS_INTERVAL",
+        env = "REMOTE_LUKS_FAILURE_INTERVAL",
         default_value = "1s",
         value_parser = parse_duration
     )]
-    interval: Duration,
+    failure_interval: Duration,
 
     /// Delay between successful remote command runs in continuous mode.
     #[arg(
@@ -167,7 +167,7 @@ async fn find_ssh() -> Result<PathBuf> {
 }
 
 async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
-    let interval = args.interval;
+    let failure_interval = args.failure_interval;
 
     loop {
         debug!(port = args.port, "attempting SSH authentication");
@@ -188,7 +188,7 @@ async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString
             }
             Err(AttemptError::Retry(error)) => {
                 warn!(error = %error, "SSH attempt failed; will retry");
-                interval
+                failure_interval
             }
             Err(AttemptError::Fatal(error)) => return Err(error),
         };
@@ -432,7 +432,7 @@ mod tests {
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: PathBuf::from("/tmp/known_hosts"),
-            interval: Duration::from_secs(3),
+            failure_interval: Duration::from_secs(3),
             success_interval: Duration::from_secs(60),
             once: false,
             max_runtime: None,
@@ -561,7 +561,7 @@ mod tests {
         assert_eq!(args.user, "root");
         assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
         assert!(!args.once);
-        assert_eq!(args.interval, Duration::from_secs(1));
+        assert_eq!(args.failure_interval, Duration::from_secs(1));
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
         assert_eq!(args.command, "unlock-luks unlock");
