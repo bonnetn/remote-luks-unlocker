@@ -7,7 +7,8 @@
             "customType": "regex",
             "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
             "matchStrings": [
-                "cargo install --locked --version (?<currentValue>\\d+\\.\\d+\\.\\d+) (?<depName>cargo-(?:deny|release))"
+                "cargo install --locked --version (?<currentValue>\\d+\\.\\d+\\.\\d+) (?<depName>cargo-(?:deny|release))",
+                "cargo binstall --no-confirm --disable-telemetry (?<depName>cargo-(?:deny|release))@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
             ],
             "datasourceTemplate": "crate"
         }
