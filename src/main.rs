@@ -46,7 +46,7 @@ struct Args {
     #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
     identity_file: PathBuf,
 
-    /// known_hosts file used to verify the remote host key.
+    /// `known_hosts` file used to verify the remote host key.
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
     known_hosts: Option<PathBuf>,
 
@@ -130,7 +130,7 @@ async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
     lookup_host((host, port))
         .await
         .with_context(|| format!("could not resolve {host}:{port}"))
-        .map(|addresses| addresses.collect())
+        .map(Iterator::collect::<Vec<_>>)
 }
 
 async fn poll_until_connected(
@@ -209,12 +209,11 @@ async fn connect_and_run(
         }
     }
 
-    let status = match timeout(attempt_timeout, child.wait()).await {
-        Ok(result) => result.with_context(|| format!("failed waiting for {}", ssh.display()))?,
-        Err(_) => {
-            terminate_child(&mut child).await;
-            bail!("SSH attempt exceeded {attempt_timeout:?}")
-        }
+    let status = if let Ok(result) = timeout(attempt_timeout, child.wait()).await {
+        result.with_context(|| format!("failed waiting for {}", ssh.display()))?
+    } else {
+        terminate_child(&mut child).await;
+        bail!("SSH attempt exceeded {attempt_timeout:?}")
     };
 
     if status.success() {

@@ -81,7 +81,7 @@ impl Fixture {
         panic!("ssh-keyscan could not read the Dropbear host key");
     }
 
-    fn run_cli(&self, args: &[String], environment: &[(&str, &str)]) -> Option<Output> {
+    fn run_cli(args: &[String], environment: &[(&str, &str)]) -> Option<Output> {
         let binary = env::var("CARGO_BIN_EXE_remote-luks-unlocker")
             .or_else(|_| env::var("CARGO_BIN_EXE_remote_luks_unlocker"))
             .expect("Cargo did not provide the polling binary path");
@@ -209,9 +209,7 @@ fn public_key_authentication_without_host_key_verification() {
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
     args.extend(["--luks-password".into(), PASSWORD.into()]);
-    let result = fixture
-        .run_cli(&args, &[])
-        .expect("polling client timed out");
+    let result = Fixture::run_cli(&args, &[]).expect("polling client timed out");
     assert!(
         result.status.success(),
         "CLI public-key flow failed: {result:?}"
@@ -229,9 +227,7 @@ fn identity_and_host_key_with_cli_options() {
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
     ]);
-    let result = fixture
-        .run_cli(&args, &[])
-        .expect("polling client timed out");
+    let result = Fixture::run_cli(&args, &[]).expect("polling client timed out");
     assert!(
         result.status.success(),
         "CLI key/host-key flow failed: {result:?}"
@@ -258,9 +254,7 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS", "10"),
         ("REMOTE_LUKS_COMMAND", "unlock-luks unlock"),
     ];
-    let result = fixture
-        .run_cli(&[], &environment)
-        .expect("polling client timed out");
+    let result = Fixture::run_cli(&[], &environment).expect("polling client timed out");
     assert!(
         result.status.success(),
         "environment flow failed: {result:?}"
@@ -286,7 +280,7 @@ fn mismatched_host_key_is_rejected() {
         "--known-hosts".into(),
         wrong_known_hosts.to_string_lossy().into_owned(),
     ]);
-    let result = fixture.run_cli(&args, &[]);
+    let result = Fixture::run_cli(&args, &[]);
     assert!(
         result.is_none_or(|output| !output.status.success()),
         "mismatched host key was accepted"
