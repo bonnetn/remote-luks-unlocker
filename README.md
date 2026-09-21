@@ -129,44 +129,17 @@ The default command is `unlock-luks unlock`. For Debian or Ubuntu
 
 ## Run it with systemd
 
-For unattended operation, run the client as a systemd service. The client
-already waits and retries. Put the environment variables in a protected
-`EnvironmentFile`; do not put the passphrase directly in the unit file.
+For unattended operation, run one long-lived client instance under systemd,
+cron, or another supervisor. The client already waits and retries; do not
+start a new copy every minute.
 
-Create `/etc/systemd/system/remote-luks-unlocker.service`:
+Make sure the service:
 
-```ini
-[Unit]
-Description=Unlock remote LUKS server
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-User=remote-luks
-EnvironmentFile=/etc/remote-luks-unlocker/environment
-ExecStart=/usr/local/bin/remote-luks-unlocker
-Restart=on-failure
-RestartSec=5s
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then enable it:
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now remote-luks-unlocker.service
-```
-
-Use a dedicated service account and protect the private key, `known_hosts`,
-and environment file. Check the logs with `journalctl` before testing a
-reboot.
+- starts after networking is available;
+- can read the identity and `known_hosts` files;
+- receives the required options or `REMOTE_LUKS_*` variables;
+- keeps the LUKS passphrase out of the unit file and source control; and
+- restarts the client if it exits unexpectedly.
 
 ## Server setup
 
