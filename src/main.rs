@@ -114,6 +114,15 @@ struct Args {
     )]
     attempt_timeout: Duration,
 
+    /// Maximum time OpenSSH may spend establishing one connection, such as `2s` or `10s`.
+    #[arg(
+        long,
+        env = "REMOTE_LUKS_CONNECT_TIMEOUT",
+        default_value = "2s",
+        value_parser = parse_duration
+    )]
+    connect_timeout: Duration,
+
     /// Remote command to run after authentication.
     #[arg(
         long,
@@ -375,7 +384,7 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         OsString::from("-o"),
         OsString::from("KbdInteractiveAuthentication=no"),
         OsString::from("-o"),
-        OsString::from("ConnectTimeout=2"),
+        OsString::from(format!("ConnectTimeout={}", args.connect_timeout.as_secs())),
     ];
     arguments.extend([
         OsString::from("-o"),
@@ -442,6 +451,7 @@ mod tests {
             once: false,
             max_runtime: None,
             attempt_timeout: Duration::from_secs(7),
+            connect_timeout: Duration::from_secs(2),
             command: "unlock-luks unlock".to_owned(),
         }
     }
@@ -571,7 +581,22 @@ mod tests {
         assert_eq!(args.failure_interval, Duration::from_secs(1));
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
+        assert_eq!(args.connect_timeout, Duration::from_secs(2));
         assert_eq!(args.command, "unlock-luks unlock");
+    }
+
+    #[test]
+    fn configures_connect_timeout() {
+        let mut args = test_args();
+        args.connect_timeout = Duration::from_secs(11);
+
+        let arguments = build_ssh_arguments(&args);
+
+        assert!(
+            arguments
+                .iter()
+                .any(|argument| argument == "ConnectTimeout=11")
+        );
     }
 
     #[test]

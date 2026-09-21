@@ -163,3 +163,4 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--once` | `REMOTE_LUKS_ONCE` | not set | Exit after the first successful unlock |
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |
 | `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time allowed for one SSH connection and command |
+| `--connect-timeout` | `REMOTE_LUKS_CONNECT_TIMEOUT` | `2s` | Maximum time OpenSSH may spend establishing one connection |
