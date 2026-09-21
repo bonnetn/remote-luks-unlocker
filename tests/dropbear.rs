@@ -181,11 +181,16 @@ fn ensure_podman() {
 }
 
 #[test]
-fn public_key_authentication_without_host_key_verification() {
+fn public_key_authentication_with_host_key_verification() {
     let _lock = FIXTURE_LOCK.lock().unwrap();
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
-    args.extend(["--luks-password".into(), PASSWORD.into()]);
+    args.extend([
+        "--luks-password".into(),
+        PASSWORD.into(),
+        "--known-hosts".into(),
+        fixture.known_hosts_file().to_string_lossy().into_owned(),
+    ]);
     let result = Fixture::run_cli(&args, &[]).expect("polling client timed out");
     assert!(
         result.status.success(),

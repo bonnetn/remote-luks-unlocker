@@ -17,6 +17,7 @@ remote-luks-unlocker \
   --port 2222 \
   --user root \
   --identity-file "$HOME/.ssh/id_ed25519" \
+  --known-hosts "$HOME/.ssh/known_hosts" \
   --luks-password "$REMOTE_LUKS_LUKS_PASSWORD"
 ```
 
@@ -27,10 +28,12 @@ Or (with `docker`/`podman`)
 docker run --rm \
   --user "$(id -u):$(id -g)" \
   --volume "$HOME/.ssh/id_ed25519:/run/ssh/id_ed25519:ro" \
+  --volume "$HOME/.ssh/known_hosts:/run/ssh/known_hosts:ro" \
   --env REMOTE_LUKS_HOST=127.0.0.1 \
   --env REMOTE_LUKS_PORT=2222 \
   --env REMOTE_LUKS_USER=root \
   --env REMOTE_LUKS_IDENTITY_FILE=/run/ssh/id_ed25519 \
+  --env REMOTE_LUKS_KNOWN_HOSTS=/run/ssh/known_hosts \
   --env REMOTE_LUKS_LUKS_PASSWORD \
   ghcr.io/bonnetn/remote-luks-unlocker
 ```

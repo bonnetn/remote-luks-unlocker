@@ -4,12 +4,13 @@
 
 All CLI options can also be supplied through the corresponding
 `REMOTE_LUKS_*` environment variables. Run `cargo run -- --help` for the full
-list. The private identity file is required; SSH password authentication is
-disabled. The unlock password is sent only to the remote command on standard
-input.
+list. The private identity and known-hosts files are required; SSH password
+authentication is disabled. The unlock password is sent only to the remote
+command on standard input.
 
-The client polls indefinitely until the remote command succeeds or Ctrl+C is
-pressed. Each SSH attempt is bounded by `--attempt-timeout-seconds` (or
+The client polls indefinitely for transport failures until the remote command
+succeeds, a command outcome is unsafe to retry, or Ctrl+C is pressed. Each SSH
+attempt is bounded by `--attempt-timeout-seconds` (or
 `REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS`). Logging defaults to `info`; use, for
 example, `RUST_LOG=remote_luks_unlocker=debug` for more detail.
 
