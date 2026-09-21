@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
+      PODMAN_MACHINE_NAME: podman-machine-default
+      PODMAN_CONNECTION: podman-machine-default
+
+    steps:
+      # Pin actions to an immutable commit rather than a mutable tag.
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.85.0 \
+            --profile minimal \
+            --component clippy \
+            --component rustfmt \
+            --no-self-update
+          rustup default 1.85.0
+          rustc --version --verbose
+          cargo --version --verbose
+
+      - name: Install Podman
+        run: |
+          if ! command -v podman >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y podman
+          fi
+          podman --version
+
+      - name: Start Podman machine
+        run: |
+          if ! podman machine inspect "$PODMAN_MACHINE_NAME" >/dev/null 2>&1; then
+            podman machine init "$PODMAN_MACHINE_NAME"
+          fi
+          if [ "$(podman machine inspect --format '{{.State}}' "$PODMAN_MACHINE_NAME")" != "running" ]; then
+            podman machine start "$PODMAN_MACHINE_NAME"
+          fi
+          podman system connection default "$PODMAN_CONNECTION"
+          podman info
+
+      - name: Install cargo-deny
+        run: cargo install --locked --version 0.19.0 cargo-deny
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Check dependencies
+        run: cargo deny check
+
+      - name: Validate package
+        run: cargo package --locked
+
+      - name: Run tests
+        run: cargo test --all-targets --all-features
