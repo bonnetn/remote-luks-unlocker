@@ -32,6 +32,15 @@ and `ssh-keygen`. The test harness starts the default Podman machine when
 needed. The fixture is deliberately a dummy unlock-state server rather than a
 privileged LUKS/device-mapper setup.
 
+## Container image
+
+Build and smoke-test the distroless image with:
+
+```sh
+podman build --file Containerfile --tag remote-luks-unlocker:local .
+podman run --rm remote-luks-unlocker:local --help
+```
+
 To operate the fixture manually:
 
 ```sh
