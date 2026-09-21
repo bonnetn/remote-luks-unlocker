@@ -27,9 +27,9 @@ container names, verifies password delivery to the dummy unlock command, tests
 public-key and host-key combinations, and cleans up its server and temporary
 state.
 
-Requirements are Podman, an available `podman-machine-default`, `ssh-keyscan`,
-and `ssh-keygen`. The test harness starts the default Podman machine when
-needed. The fixture is deliberately a dummy unlock-state server rather than a
+Requirements are a running Podman engine, `ssh-keyscan`, and `ssh-keygen`. On
+macOS or Windows, start the default Podman machine before running the tests.
+The fixture is deliberately a dummy unlock-state server rather than a
 privileged LUKS/device-mapper setup.
 
 ## Container image

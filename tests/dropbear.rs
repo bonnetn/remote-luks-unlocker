@@ -18,7 +18,7 @@ struct Fixture {
 
 impl Fixture {
     fn start() -> Self {
-        ensure_podman_machine();
+        ensure_podman();
         let fixture_dir =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dropbear-luks");
         let data_dir = temporary_data_dir();
@@ -165,49 +165,17 @@ fn temporary_data_dir() -> PathBuf {
     path
 }
 
-fn ensure_podman_machine() {
-    let local_engine = Command::new("podman")
-        .args(["info", "--format", "{{.Host.OS}}"])
-        .status()
-        .expect("Podman is required for the Dropbear integration test")
-        .success();
-    if local_engine {
-        return;
-    }
-
+fn ensure_podman() {
     PODMAN_READY.get_or_init(|| {
-        let machine =
-            env::var("PODMAN_MACHINE_NAME").unwrap_or_else(|_| "podman-machine-default".to_owned());
-        let connection =
-            env::var("PODMAN_CONNECTION").unwrap_or_else(|_| "podman-machine-default".to_owned());
-        let inspect = Command::new("podman")
-            .args(["machine", "inspect", "--format", "{{.State}}", &machine])
-            .output()
+        let info = Command::new("podman")
+            .arg("info")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
             .expect("Podman is required for the Dropbear integration test");
         assert!(
-            inspect.status.success(),
-            "Podman machine {machine:?} does not exist: {}",
-            String::from_utf8_lossy(&inspect.stderr)
-        );
-
-        if String::from_utf8_lossy(&inspect.stdout).trim() != "running" {
-            let start = Command::new("podman")
-                .args(["machine", "start", &machine])
-                .status()
-                .expect("failed to start the Podman machine");
-            assert!(
-                start.success(),
-                "failed to start Podman machine {machine:?}"
-            );
-        }
-
-        let select = Command::new("podman")
-            .args(["system", "connection", "default", &connection])
-            .status()
-            .expect("failed to select the Podman connection");
-        assert!(
-            select.success(),
-            "failed to select Podman connection {connection:?}"
+            info.success(),
+            "Podman engine is unavailable; start the Podman machine on macOS/Windows"
         );
     });
 }
