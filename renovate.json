@@ -1,5 +1,15 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": ["config:best-practices", ":automergeMinor", ":automergeDigest"],
-    "enabledManagers": ["cargo", "dockerfile"]
+    "enabledManagers": ["cargo", "dockerfile", "github-actions"],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+            "matchStrings": [
+                "cargo install --locked --version (?<currentValue>\\d+\\.\\d+\\.\\d+) (?<depName>cargo-(?:deny|release))"
+            ],
+            "datasourceTemplate": "crate"
+        }
+    ]
 }
