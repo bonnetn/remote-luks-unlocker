@@ -34,9 +34,9 @@ jobs:
             apt-package: gcc
             linker: gcc
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04
-            apt-package: gcc-aarch64-linux-gnu
-            linker: aarch64-linux-gnu-gcc
+            os: ubuntu-26.04-arm
+            apt-package: gcc
+            linker: gcc
           - target: aarch64-apple-darwin
             os: macos-15
             apt-package: ""
