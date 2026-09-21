@@ -40,7 +40,7 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-14
             apt-package: ""
-            linker: cc
+            linker: clang
 
     steps:
       - name: Check out release source
@@ -68,6 +68,7 @@ jobs:
           LINKER: ${{ matrix.linker }}
         run: |
           target_env=$(printf '%s' "$TARGET" | tr '[:lower:]-' '[:upper:]_')
+          export "CARGO_TARGET_${target_env}_LINKER=$LINKER"
           echo "CARGO_TARGET_${target_env}_LINKER=$LINKER" >>"$GITHUB_ENV"
           cargo build --locked --release --target "$TARGET"
 
