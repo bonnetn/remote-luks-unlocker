@@ -1,17 +1,23 @@
-# Unlock an encrypted Linux server over SSH
+# Remote LUKS Unlock for Encrypted Linux Root Filesystems over SSH
 
 [![CI](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bonnetn/remote-luks-unlocker/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/bonnetn/remote-luks-unlocker)](https://github.com/bonnetn/remote-luks-unlocker/releases)
 [![Crates.io](https://img.shields.io/crates/v/remote-luks-unlocker.svg)](https://crates.io/crates/remote-luks-unlocker)
 
-`remote-luks-unlocker` is a small client for one job: send the LUKS
-passphrase to a server that is waiting for it during boot.
+`remote-luks-unlocker` is a remote LUKS unlock tool for unattended, headless
+Linux servers. It connects over SSH to Dropbear or OpenSSH running in the
+initramfs and sends the LUKS passphrase to the remote unlock command.
 
-This is for a headless Debian or Ubuntu server with an encrypted root disk.
-The server starts Dropbear in its initramfs, you can reach that Dropbear
-session over SSH, and the client runs the unlock command for you. It is useful
-when a server has rebooted and nobody is there to type the passphrase at the
-console.
+It is designed for Debian or Ubuntu servers with an encrypted root filesystem:
+after a reboot, the client can perform a remote root unlock before anyone is
+available at the console. It supports continuous retry for long-running
+services and bounded retry for cron jobs.
+
+Typical uses include:
+
+- remotely unlocking an encrypted root disk on a headless server;
+- recovering a server that is waiting for its LUKS passphrase during boot; and
+- automating SSH-based disk unlock through systemd or cron.
 
 The client does not set up LUKS, install Dropbear, or change your bootloader.
 The binary's only external runtime dependency is the system OpenSSH `ssh`
