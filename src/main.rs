@@ -63,6 +63,10 @@ struct Args {
     )]
     interval_seconds: u64,
 
+    /// Make one SSH attempt and exit instead of retrying indefinitely.
+    #[arg(long, env = "REMOTE_LUKS_ONCE", default_value_t = false)]
+    once: bool,
+
     /// Maximum time allowed for one SSH connection and command attempt.
     #[arg(
         long,
@@ -129,6 +133,23 @@ async fn find_ssh() -> Result<PathBuf> {
 
 async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
+
+    if args.once {
+        return match connect_and_run(
+            ssh,
+            ssh_arguments,
+            Duration::from_secs(args.attempt_timeout_seconds),
+            &args.luks_password,
+        )
+        .await
+        {
+            Ok(()) => {
+                info!("SSH authentication and remote command succeeded");
+                Ok(())
+            }
+            Err(AttemptError::Retry(error) | AttemptError::Fatal(error)) => Err(error),
+        };
+    }
 
     loop {
         debug!(port = args.port, "attempting SSH authentication");
@@ -380,6 +401,7 @@ mod tests {
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: PathBuf::from("/tmp/known_hosts"),
             interval_seconds: 3,
+            once: false,
             attempt_timeout_seconds: 7,
             command: "unlock-luks unlock".to_owned(),
         }
@@ -504,7 +526,29 @@ mod tests {
         assert_eq!(args.port, 2222);
         assert_eq!(args.user, "root");
         assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
+        assert!(!args.once);
         assert_eq!(args.command, "unlock-luks unlock");
+    }
+
+    #[test]
+    fn parses_once_option() {
+        let args = Args::try_parse_from([
+            "remote-luks-unlocker",
+            "--host",
+            "example.test",
+            "-l",
+            "root",
+            "--luks-password",
+            "secret",
+            "-i",
+            "/tmp/id_ed25519",
+            "--known-hosts",
+            "/tmp/known_hosts",
+            "--once",
+        ])
+        .expect("--once should parse");
+
+        assert!(args.once);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -561,6 +605,33 @@ mod tests {
                 .to_string()
                 .contains("SSH attempt exceeded")
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn once_mode_does_not_retry_a_failed_attempt() {
+        let script_path = env::temp_dir().join(format!(
+            "remote-luks-unlocker-once-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is before the Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&script_path, "#!/bin/sh\nexit 255\n").expect("failed to write fake SSH script");
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
+            .expect("failed to make fake SSH script executable");
+        let mut args = test_args();
+        args.once = true;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(200),
+            poll_until_connected(&args, &script_path, &[]),
+        )
+        .await
+        .expect("once mode should not wait for a retry");
+
+        fs::remove_file(&script_path).expect("failed to remove fake SSH script");
+        assert!(result.is_err());
     }
 
     #[tokio::test(flavor = "current_thread")]
