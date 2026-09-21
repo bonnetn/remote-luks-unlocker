@@ -147,6 +147,7 @@ a running machine.
 
 Every option is also available as an environment variable. Run
 `remote-luks-unlocker --help` for the full list.
+Duration values use units such as `1s`, `30s`, or `10m`.
 
 | Option | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
@@ -157,8 +158,8 @@ Every option is also available as an environment variable. Run
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | required | File used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` | Remote command to run |
-| `--interval` | `REMOTE_LUKS_INTERVAL` | `1s` | Delay between retry attempts |
-| `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Delay before a follow-up unlock attempt |
+| `--interval` | `REMOTE_LUKS_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
+| `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Wait after success before running the command again |
 | `--once` | `REMOTE_LUKS_ONCE` | continuous | Exit after the first successful unlock |
-| `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Stop retrying after this duration |
-| `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time for one SSH attempt |
+| `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |
+| `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time allowed for one SSH connection and command |
