@@ -41,6 +41,10 @@ jobs:
             os: macos-15
             apt-package: ""
             linker: clang
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+            apt-package: ""
+            linker: ""
 
     steps:
       - name: Check out release source
@@ -52,6 +56,7 @@ jobs:
 
       - name: Install cross compiler
         if: matrix.apt-package != ''
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes "${{ matrix.apt-package }}"
@@ -63,26 +68,35 @@ jobs:
           rustup default 1.98.1
 
       - name: Build binary
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
           LINKER: ${{ matrix.linker }}
         run: |
-          target_env=$(printf '%s' "$TARGET" | tr '[:lower:]-' '[:upper:]_')
-          export "CARGO_TARGET_${target_env}_LINKER=$LINKER"
-          echo "CARGO_TARGET_${target_env}_LINKER=$LINKER" >>"$GITHUB_ENV"
+          if [ -n "$LINKER" ]; then
+            target_env=$(printf '%s' "$TARGET" | tr '[:lower:]-' '[:upper:]_')
+            export "CARGO_TARGET_${target_env}_LINKER=$LINKER"
+            echo "CARGO_TARGET_${target_env}_LINKER=$LINKER" >>"$GITHUB_ENV"
+          fi
           cargo build --locked --release --target "$TARGET"
 
       - name: Package binary
+        shell: pwsh
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          asset="remote-luks-unlocker-${RELEASE_TAG}-${TARGET}"
-          mkdir -p dist
-          tar --create --gzip \
-            --file "dist/${asset}.tar.gz" \
-            --directory "target/${TARGET}/release" \
-            remote-luks-unlocker
-          sha256sum "dist/${asset}.tar.gz" >"dist/${asset}.tar.gz.sha256"
+          $binary = "remote-luks-unlocker"
+          if ($env:TARGET -like "*windows*") {
+            $binary += ".exe"
+          }
+          $asset = "remote-luks-unlocker-$env:RELEASE_TAG-$env:TARGET"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          tar --create --gzip `
+            --file "dist/$asset.tar.gz" `
+            --directory "target/$env:TARGET/release" `
+            $binary
+          $hash = (Get-FileHash "dist/$asset.tar.gz" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $asset.tar.gz" | Set-Content "dist/$asset.tar.gz.sha256"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
