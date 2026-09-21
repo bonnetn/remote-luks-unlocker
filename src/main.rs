@@ -38,6 +38,9 @@ fn parse_duration(value: &str) -> std::result::Result<Duration, String> {
     let seconds = number
         .checked_mul(multiplier)
         .ok_or_else(|| "duration is too large".to_owned())?;
+    if seconds == 0 {
+        return Err("duration must be greater than zero".to_owned());
+    }
     Ok(Duration::from_secs(seconds))
 }
 
@@ -569,6 +572,12 @@ mod tests {
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
         assert_eq!(args.command, "unlock-luks unlock");
+    }
+
+    #[test]
+    fn rejects_zero_duration() {
+        assert!(parse_duration("0s").is_err());
+        assert!(parse_duration("0m").is_err());
     }
 
     #[test]
