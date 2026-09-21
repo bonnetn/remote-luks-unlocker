@@ -183,7 +183,9 @@ fn ensure_podman() {
 
 #[test]
 fn public_key_authentication_with_host_key_verification() {
-    let _lock = FIXTURE_LOCK.lock().unwrap();
+    let _lock = FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
     args.extend([
@@ -201,7 +203,9 @@ fn public_key_authentication_with_host_key_verification() {
 
 #[test]
 fn identity_and_host_key_with_cli_options() {
-    let _lock = FIXTURE_LOCK.lock().unwrap();
+    let _lock = FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = Fixture::start();
     let mut args = fixture.common_args();
     args.extend([
@@ -219,7 +223,9 @@ fn identity_and_host_key_with_cli_options() {
 
 #[test]
 fn all_options_from_environment() {
-    let _lock = FIXTURE_LOCK.lock().unwrap();
+    let _lock = FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = Fixture::start();
     let known_hosts = fixture.known_hosts_file();
     let port = fixture.port.to_string();
@@ -247,7 +253,9 @@ fn all_options_from_environment() {
 
 #[test]
 fn mismatched_host_key_is_rejected() {
-    let _lock = FIXTURE_LOCK.lock().unwrap();
+    let _lock = FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = Fixture::start();
     let wrong_known_hosts = fixture.guard.data_dir.join("wrong_known_hosts");
     fs::write(
