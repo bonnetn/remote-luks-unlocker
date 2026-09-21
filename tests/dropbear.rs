@@ -128,10 +128,10 @@ impl Fixture {
             "root".into(),
             "--identity-file".into(),
             self.identity_file().to_string_lossy().into_owned(),
-            "--interval-seconds".into(),
-            "1".into(),
-            "--attempt-timeout-seconds".into(),
-            "10".into(),
+            "--interval".into(),
+            "1s".into(),
+            "--attempt-timeout".into(),
+            "10s".into(),
         ]
     }
 }
@@ -232,8 +232,8 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_LUKS_PASSWORD", PASSWORD),
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
-        ("REMOTE_LUKS_INTERVAL_SECONDS", "1"),
-        ("REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS", "10"),
+        ("REMOTE_LUKS_INTERVAL", "1s"),
+        ("REMOTE_LUKS_ATTEMPT_TIMEOUT", "10s"),
         ("REMOTE_LUKS_COMMAND", "unlock-luks unlock"),
     ];
     let result = Fixture::run_cli(&[], &environment).expect("polling client timed out");

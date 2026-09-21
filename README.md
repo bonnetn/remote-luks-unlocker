@@ -157,8 +157,8 @@ Every option is also available as an environment variable. Run
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | required |
 | `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required |
 | `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` |
-| `--interval-seconds` | `REMOTE_LUKS_INTERVAL_SECONDS` | `1` |
+| `--interval` | `REMOTE_LUKS_INTERVAL` | `1s` |
 | `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` |
 | `--once` | `REMOTE_LUKS_ONCE` | continuous |
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited |
-| `--attempt-timeout-seconds` | `REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS` | `30` |
+| `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` |

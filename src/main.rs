@@ -72,14 +72,14 @@ struct Args {
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
     known_hosts: PathBuf,
 
-    /// Seconds between port checks and login attempts.
+    /// Delay between failed SSH attempts, such as `1s` or `1m`.
     #[arg(
         long,
-        env = "REMOTE_LUKS_INTERVAL_SECONDS",
-        default_value_t = 1,
-        value_parser = clap::value_parser!(u64).range(1..)
+        env = "REMOTE_LUKS_INTERVAL",
+        default_value = "1s",
+        value_parser = parse_duration
     )]
-    interval_seconds: u64,
+    interval: Duration,
 
     /// Delay between successful remote command runs in continuous mode.
     #[arg(
@@ -102,14 +102,14 @@ struct Args {
     )]
     max_runtime: Option<Duration>,
 
-    /// Maximum time allowed for one SSH connection and command attempt.
+    /// Maximum time allowed for one SSH connection and command attempt, such as `30s` or `1m`.
     #[arg(
         long,
-        env = "REMOTE_LUKS_ATTEMPT_TIMEOUT_SECONDS",
-        default_value_t = 30,
-        value_parser = clap::value_parser!(u64).range(1..)
+        env = "REMOTE_LUKS_ATTEMPT_TIMEOUT",
+        default_value = "30s",
+        value_parser = parse_duration
     )]
-    attempt_timeout_seconds: u64,
+    attempt_timeout: Duration,
 
     /// Remote command to run after authentication.
     #[arg(
@@ -167,14 +167,14 @@ async fn find_ssh() -> Result<PathBuf> {
 }
 
 async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
-    let interval = Duration::from_secs(args.interval_seconds);
+    let interval = args.interval;
 
     loop {
         debug!(port = args.port, "attempting SSH authentication");
         let delay = match connect_and_run(
             ssh,
             ssh_arguments,
-            Duration::from_secs(args.attempt_timeout_seconds),
+            args.attempt_timeout,
             &args.luks_password,
         )
         .await
@@ -432,11 +432,11 @@ mod tests {
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             known_hosts: PathBuf::from("/tmp/known_hosts"),
-            interval_seconds: 3,
+            interval: Duration::from_secs(3),
             success_interval: Duration::from_secs(60),
             once: false,
             max_runtime: None,
-            attempt_timeout_seconds: 7,
+            attempt_timeout: Duration::from_secs(7),
             command: "unlock-luks unlock".to_owned(),
         }
     }
@@ -556,11 +556,12 @@ mod tests {
         ])
         .expect("default CLI arguments should parse");
 
-        assert_eq!(args.attempt_timeout_seconds, 30);
+        assert_eq!(args.attempt_timeout, Duration::from_secs(30));
         assert_eq!(args.port, 2222);
         assert_eq!(args.user, "root");
         assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
         assert!(!args.once);
+        assert_eq!(args.interval, Duration::from_secs(1));
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
         assert_eq!(args.command, "unlock-luks unlock");
