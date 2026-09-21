@@ -1,6 +1,8 @@
 use std::{
     env,
-    net::SocketAddr,
+    error::Error,
+    ffi::OsString,
+    fmt::{Display, Formatter},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
@@ -12,13 +14,14 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use tokio::{
     fs,
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, lookup_host},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
-    time::{sleep, timeout},
+    time::{Instant, sleep, timeout_at},
 };
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
+
+const MAX_STDERR_BYTES: usize = 16 * 1024;
 
 #[derive(Parser)]
 #[command(
@@ -49,7 +52,7 @@ struct Args {
 
     /// `known_hosts` file used to verify the remote host key.
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
-    known_hosts: Option<PathBuf>,
+    known_hosts: PathBuf,
 
     /// Seconds between port checks and login attempts.
     #[arg(
@@ -124,75 +127,56 @@ async fn find_ssh() -> Result<PathBuf> {
     bail!("ssh binary is not installed or is not executable")
 }
 
-async fn resolve_endpoint(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
-    debug!(host, port, "resolving SSH endpoint");
-    lookup_host((host, port))
-        .await
-        .with_context(|| format!("could not resolve {host}:{port}"))
-        .map(Iterator::collect::<Vec<_>>)
-}
-
-async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[String]) -> Result<()> {
+async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString]) -> Result<()> {
     let interval = Duration::from_secs(args.interval_seconds);
 
     loop {
-        let endpoint = match resolve_endpoint(&args.host, args.port).await {
-            Ok(endpoint) => {
-                debug!(addresses = ?endpoint, "resolved SSH endpoint");
-                endpoint
+        debug!(port = args.port, "attempting SSH authentication");
+        match connect_and_run(
+            ssh,
+            ssh_arguments,
+            Duration::from_secs(args.attempt_timeout_seconds),
+            &args.luks_password,
+        )
+        .await
+        {
+            Ok(()) => {
+                info!("SSH authentication and remote command succeeded");
+                return Ok(());
             }
-            Err(error) => {
-                warn!(error = %error, ?interval, "could not resolve SSH endpoint; will retry");
-                sleep(interval).await;
-                continue;
+            Err(AttemptError::Retry(error)) => {
+                warn!(error = %error, "SSH attempt failed; will retry");
             }
-        };
-        let port_open = port_is_open(&endpoint).await;
-        if port_open {
-            debug!(
-                port = args.port,
-                "SSH port is open; attempting authentication"
-            );
-            match connect_and_run(
-                ssh,
-                ssh_arguments,
-                Duration::from_secs(args.attempt_timeout_seconds),
-                &args.luks_password,
-            )
-            .await
-            {
-                Ok(()) => {
-                    info!("SSH authentication and remote command succeeded");
-                    return Ok(());
-                }
-                Err(error) => warn!(error = %error, "SSH attempt failed; will retry"),
-            }
-        } else {
-            debug!("SSH port is not open; will retry");
+            Err(AttemptError::Fatal(error)) => return Err(error),
         }
 
         sleep(interval).await;
     }
 }
 
-async fn port_is_open(endpoint: &[SocketAddr]) -> bool {
-    for address in endpoint {
-        if timeout(Duration::from_secs(1), TcpStream::connect(address))
-            .await
-            .is_ok_and(|result| result.is_ok())
-        {
-            return true;
+#[derive(Debug)]
+enum AttemptError {
+    Retry(anyhow::Error),
+    Fatal(anyhow::Error),
+}
+
+impl Display for AttemptError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Retry(error) | Self::Fatal(error) => Display::fmt(error, formatter),
         }
     }
-    false
 }
+
+impl Error for AttemptError {}
 
 async fn connect_and_run(
     ssh: &Path,
-    arguments: &[String],
+    arguments: &[OsString],
     attempt_timeout: Duration,
     luks_password: &str,
-) -> Result<()> {
+) -> std::result::Result<(), AttemptError> {
+    let deadline = Instant::now() + attempt_timeout;
     debug!("starting SSH child process");
     let mut child = Command::new(ssh)
         .args(arguments)
@@ -201,37 +185,63 @@ async fn connect_and_run(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("failed to execute {}", ssh.display()))?;
+        .with_context(|| format!("failed to execute {}", ssh.display()))
+        .map_err(AttemptError::Retry)?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(luks_password.as_bytes()).await {
-            terminate_child(&mut child).await;
-            return Err(error).context("failed to send the LUKS passphrase to the remote command");
+        match timeout_at(deadline, stdin.write_all(luks_password.as_bytes())).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                terminate_child(&mut child).await;
+                return Err(AttemptError::Fatal(anyhow!(error).context(
+                    "failed to send the LUKS passphrase to the remote command",
+                )));
+            }
+            Err(_) => {
+                terminate_child(&mut child).await;
+                return Err(AttemptError::Fatal(anyhow!(
+                    "SSH attempt exceeded {attempt_timeout:?}"
+                )));
+            }
         }
-        if let Err(error) = stdin.write_all(b"\n").await {
-            terminate_child(&mut child).await;
-            return Err(error).context("failed to terminate LUKS passphrase input");
+        match timeout_at(deadline, stdin.write_all(b"\n")).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                terminate_child(&mut child).await;
+                return Err(AttemptError::Fatal(
+                    anyhow!(error).context("failed to terminate LUKS passphrase input"),
+                ));
+            }
+            Err(_) => {
+                terminate_child(&mut child).await;
+                return Err(AttemptError::Fatal(anyhow!(
+                    "SSH attempt exceeded {attempt_timeout:?}"
+                )));
+            }
         }
     }
 
     let mut stderr = child
         .stderr
         .take()
-        .context("SSH process did not provide a stderr pipe")?;
-    let mut stderr_output = Vec::new();
-    let (status, stderr) = if let Ok(result) = timeout(attempt_timeout, async {
-        let (status, stderr_result) =
-            tokio::join!(child.wait(), stderr.read_to_end(&mut stderr_output));
+        .context("SSH process did not provide a stderr pipe")
+        .map_err(AttemptError::Fatal)?;
+    let (status, stderr, stderr_truncated) = if let Ok(result) = timeout_at(deadline, async {
+        let (status, stderr_result) = tokio::join!(child.wait(), read_stderr(&mut stderr));
         let status = status?;
-        stderr_result?;
-        std::io::Result::Ok((status, stderr_output))
+        let (stderr_output, stderr_truncated) = stderr_result?;
+        std::io::Result::Ok((status, stderr_output, stderr_truncated))
     })
     .await
     {
-        result.with_context(|| format!("failed waiting for {}", ssh.display()))?
+        result
+            .with_context(|| format!("failed waiting for {}", ssh.display()))
+            .map_err(AttemptError::Fatal)?
     } else {
         terminate_child(&mut child).await;
-        bail!("SSH attempt exceeded {attempt_timeout:?}")
+        return Err(AttemptError::Fatal(anyhow!(
+            "SSH attempt exceeded {attempt_timeout:?}"
+        )));
     };
 
     if status.success() {
@@ -239,11 +249,50 @@ async fn connect_and_run(
     } else {
         let stderr =
             str::from_utf8(&stderr).map_or("SSH produced invalid UTF-8 on stderr", str::trim);
+        let escaped_stderr = stderr.escape_debug().to_string();
+        let rendered_stderr_truncated = escaped_stderr.len() > MAX_STDERR_BYTES;
+        let stderr = escaped_stderr
+            .chars()
+            .take(MAX_STDERR_BYTES)
+            .collect::<String>();
+        let stderr = if stderr_truncated || rendered_stderr_truncated {
+            format!("{stderr} [stderr truncated]")
+        } else {
+            stderr
+        };
         debug!(%status, stderr, "SSH child process failed");
         if stderr.is_empty() {
-            bail!("ssh exited with status {status}")
+            let error = anyhow!("ssh exited with status {status}");
+            return Err(if status.code() == Some(255) {
+                AttemptError::Retry(error)
+            } else {
+                AttemptError::Fatal(error)
+            });
         }
-        bail!("ssh exited with status {status}: {stderr}")
+        let error = anyhow!("ssh exited with status {status}: {stderr}");
+        Err(if status.code() == Some(255) {
+            AttemptError::Retry(error)
+        } else {
+            AttemptError::Fatal(error)
+        })
+    }
+}
+
+async fn read_stderr(reader: &mut (impl AsyncRead + Unpin)) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut output = Vec::with_capacity(MAX_STDERR_BYTES.min(8 * 1024));
+    let mut buffer = [0_u8; 8 * 1024];
+    let mut truncated = false;
+
+    loop {
+        let bytes_read = reader.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            return Ok((output, truncated));
+        }
+
+        let remaining = MAX_STDERR_BYTES.saturating_sub(output.len());
+        let bytes_to_keep = remaining.min(bytes_read);
+        output.extend_from_slice(&buffer[..bytes_to_keep]);
+        truncated |= bytes_to_keep < bytes_read;
     }
 }
 
@@ -256,56 +305,65 @@ async fn terminate_child(child: &mut tokio::process::Child) {
     }
 }
 
-fn build_ssh_arguments(args: &Args) -> Vec<String> {
-    let target = format!("{}@{}", args.user, args.host);
+fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
+    let target = OsString::from(format!("{}@{}", args.user, args.host));
     let mut arguments = vec![
-        "-p".to_owned(),
-        args.port.to_string(),
-        "-o".to_owned(),
-        "BatchMode=no".to_owned(),
-        "-o".to_owned(),
-        "NumberOfPasswordPrompts=1".to_owned(),
-        "-o".to_owned(),
-        "KbdInteractiveAuthentication=no".to_owned(),
-        "-o".to_owned(),
-        "ConnectTimeout=2".to_owned(),
+        OsString::from("-F"),
+        OsString::from("/dev/null"),
+        OsString::from("-p"),
+        OsString::from(args.port.to_string()),
+        OsString::from("-o"),
+        OsString::from("BatchMode=no"),
+        OsString::from("-o"),
+        OsString::from("NumberOfPasswordPrompts=1"),
+        OsString::from("-o"),
+        OsString::from("KbdInteractiveAuthentication=no"),
+        OsString::from("-o"),
+        OsString::from("ConnectTimeout=2"),
     ];
-    if let Some(known_hosts) = args.known_hosts.as_deref() {
-        arguments.extend([
-            "-o".to_owned(),
-            "StrictHostKeyChecking=yes".to_owned(),
-            "-o".to_owned(),
-            format!("UserKnownHostsFile={}", known_hosts.display()),
-        ]);
-    } else {
-        arguments.extend([
-            "-o".to_owned(),
-            "StrictHostKeyChecking=no".to_owned(),
-            "-o".to_owned(),
-            "UserKnownHostsFile=/dev/null".to_owned(),
-        ]);
-    }
     arguments.extend([
-        "-i".to_owned(),
-        args.identity_file.to_string_lossy().into_owned(),
-        "-o".to_owned(),
-        "IdentitiesOnly=yes".to_owned(),
-        "-o".to_owned(),
-        "PreferredAuthentications=publickey".to_owned(),
-        "-o".to_owned(),
-        "PubkeyAuthentication=yes".to_owned(),
-        "-o".to_owned(),
-        "PasswordAuthentication=no".to_owned(),
+        OsString::from("-o"),
+        OsString::from("StrictHostKeyChecking=yes"),
+        OsString::from("-o"),
+        path_option("UserKnownHostsFile", &args.known_hosts),
     ]);
-    arguments.extend([target, args.command.clone()]);
+    arguments.extend([
+        OsString::from("-i"),
+        args.identity_file.clone().into_os_string(),
+        OsString::from("-o"),
+        OsString::from("IdentitiesOnly=yes"),
+        OsString::from("-o"),
+        OsString::from("PreferredAuthentications=publickey"),
+        OsString::from("-o"),
+        OsString::from("PubkeyAuthentication=yes"),
+        OsString::from("-o"),
+        OsString::from("PasswordAuthentication=no"),
+        OsString::from("-o"),
+        OsString::from("ControlMaster=no"),
+        OsString::from("-o"),
+        OsString::from("ControlPath=none"),
+        OsString::from("-o"),
+        OsString::from("ProxyCommand=none"),
+        OsString::from("-o"),
+        OsString::from("ProxyJump=none"),
+    ]);
+    arguments.extend([target, OsString::from(args.command.clone())]);
     arguments
+}
+
+fn path_option(name: &str, path: &Path) -> OsString {
+    let mut option = OsString::from(name);
+    option.push("=");
+    option.push(path);
+    option
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
+        ffi::OsString,
         fs,
-        net::Ipv4Addr,
+        os::unix::ffi::OsStringExt,
         os::unix::fs::PermissionsExt,
         path::PathBuf,
         time::{Duration, SystemTime, UNIX_EPOCH},
@@ -320,7 +378,7 @@ mod tests {
             user: "root".to_owned(),
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
-            known_hosts: None,
+            known_hosts: PathBuf::from("/tmp/known_hosts"),
             interval_seconds: 3,
             attempt_timeout_seconds: 7,
             command: "unlock-luks unlock".to_owned(),
@@ -328,12 +386,14 @@ mod tests {
     }
 
     #[test]
-    fn builds_public_key_ssh_arguments_without_host_key_verification() {
+    fn builds_public_key_ssh_arguments_with_host_key_verification() {
         let arguments = build_ssh_arguments(&test_args());
 
         assert_eq!(
             arguments,
             [
+                "-F",
+                "/dev/null",
                 "-p",
                 "2222",
                 "-o",
@@ -345,9 +405,9 @@ mod tests {
                 "-o",
                 "ConnectTimeout=2",
                 "-o",
-                "StrictHostKeyChecking=no",
+                "StrictHostKeyChecking=yes",
                 "-o",
-                "UserKnownHostsFile=/dev/null",
+                "UserKnownHostsFile=/tmp/known_hosts",
                 "-i",
                 "/tmp/id_ed25519",
                 "-o",
@@ -358,6 +418,14 @@ mod tests {
                 "PubkeyAuthentication=yes",
                 "-o",
                 "PasswordAuthentication=no",
+                "-o",
+                "ControlMaster=no",
+                "-o",
+                "ControlPath=none",
+                "-o",
+                "ProxyCommand=none",
+                "-o",
+                "ProxyJump=none",
                 "root@example.test",
                 "unlock-luks unlock",
             ]
@@ -368,7 +436,7 @@ mod tests {
     fn builds_public_key_and_known_hosts_arguments() {
         let mut args = test_args();
         args.identity_file = PathBuf::from("/tmp/id_ed25519");
-        args.known_hosts = Some(PathBuf::from("/tmp/known_hosts"));
+        args.known_hosts = PathBuf::from("/tmp/known_hosts");
 
         let arguments = build_ssh_arguments(&args);
 
@@ -400,6 +468,20 @@ mod tests {
     }
 
     #[test]
+    fn preserves_non_utf8_identity_paths() {
+        let mut args = test_args();
+        let identity_file = OsString::from_vec(vec![b'/', b't', b'm', b'p', b'/', 0x80]);
+        args.identity_file = PathBuf::from(&identity_file);
+
+        let arguments = build_ssh_arguments(&args);
+        let identity_index = arguments
+            .iter()
+            .position(|argument| argument == "-i")
+            .expect("identity argument is missing");
+        assert_eq!(arguments[identity_index + 1], identity_file);
+    }
+
+    #[test]
     fn parses_attempt_timeout_default() {
         let args = Args::try_parse_from([
             "remote-luks-unlocker",
@@ -411,6 +493,8 @@ mod tests {
             "secret",
             "-i",
             "/tmp/id_ed25519",
+            "--known-hosts",
+            "/tmp/known_hosts",
             "-p",
             "2222",
         ])
@@ -419,28 +503,8 @@ mod tests {
         assert_eq!(args.attempt_timeout_seconds, 30);
         assert_eq!(args.port, 2222);
         assert_eq!(args.user, "root");
+        assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
         assert_eq!(args.command, "unlock-luks unlock");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn reports_open_port() {
-        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .expect("failed to bind test listener");
-        let address = listener.local_addr().expect("failed to get test address");
-
-        assert!(port_is_open(&[address]).await);
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn reports_closed_port() {
-        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .expect("failed to bind test listener");
-        let address = listener.local_addr().expect("failed to get test address");
-        drop(listener);
-
-        assert!(!port_is_open(&[address]).await);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -466,6 +530,64 @@ mod tests {
                 .to_string()
                 .contains("SSH attempt exceeded")
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bounds_password_delivery_by_the_attempt_timeout() {
+        let script_path = env::temp_dir().join(format!(
+            "remote-luks-unlocker-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is before the Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&script_path, "#!/bin/sh\nwhile :; do :; done\n")
+            .expect("failed to write fake SSH script");
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
+            .expect("failed to make fake SSH script executable");
+        let result = connect_and_run(
+            &script_path,
+            &[],
+            Duration::from_millis(50),
+            &"secret".repeat(128 * 1024),
+        )
+        .await;
+
+        fs::remove_file(&script_path).expect("failed to remove fake SSH script");
+        assert!(
+            result
+                .expect_err("the fake SSH process should time out while reading stdin")
+                .to_string()
+                .contains("SSH attempt exceeded")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bounds_ssh_stderr_output() {
+        let script_path = env::temp_dir().join(format!(
+            "remote-luks-unlocker-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is before the Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nyes x | head -c 32768 >&2\nexit 1\n",
+        )
+        .expect("failed to write fake SSH script");
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
+            .expect("failed to make fake SSH script executable");
+        let result = connect_and_run(&script_path, &[], Duration::from_secs(1), "secret").await;
+
+        fs::remove_file(&script_path).expect("failed to remove fake SSH script");
+        let error = result
+            .expect_err("the fake SSH process should return a failure")
+            .to_string();
+        assert!(error.contains("stderr truncated"));
+        assert!(error.len() < 20_000);
     }
 
     #[tokio::test(flavor = "current_thread")]
