@@ -4,6 +4,7 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
+    str,
     time::Duration,
 };
 
@@ -11,7 +12,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use tokio::{
     fs,
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, lookup_host},
     process::Command,
     time::{sleep, timeout},
@@ -194,7 +195,7 @@ async fn connect_and_run(
         .kill_on_drop(true)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("failed to execute {}", ssh.display()))?;
 
@@ -209,7 +210,20 @@ async fn connect_and_run(
         }
     }
 
-    let status = if let Ok(result) = timeout(attempt_timeout, child.wait()).await {
+    let mut stderr = child
+        .stderr
+        .take()
+        .context("SSH process did not provide a stderr pipe")?;
+    let mut stderr_output = Vec::new();
+    let (status, stderr) = if let Ok(result) = timeout(attempt_timeout, async {
+        let (status, stderr_result) =
+            tokio::join!(child.wait(), stderr.read_to_end(&mut stderr_output));
+        let status = status?;
+        stderr_result?;
+        std::io::Result::Ok((status, stderr_output))
+    })
+    .await
+    {
         result.with_context(|| format!("failed waiting for {}", ssh.display()))?
     } else {
         terminate_child(&mut child).await;
@@ -219,8 +233,15 @@ async fn connect_and_run(
     if status.success() {
         Ok(())
     } else {
-        debug!(%status, "SSH child process failed");
-        bail!("ssh exited with status {status}")
+        let stderr = str::from_utf8(&stderr)
+            .map(str::trim)
+            .unwrap_or("SSH produced invalid UTF-8 on stderr");
+        debug!(%status, stderr, "SSH child process failed");
+        if stderr.is_empty() {
+            bail!("ssh exited with status {status}")
+        } else {
+            bail!("ssh exited with status {status}: {stderr}")
+        }
     }
 }
 
@@ -466,5 +487,30 @@ mod tests {
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
         result.expect("successful fake SSH command should return success");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn reports_ssh_stderr_when_the_remote_command_fails() {
+        let script_path = env::temp_dir().join(format!(
+            "remote-luks-unlocker-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is before the Unix epoch")
+                .as_nanos()
+        ));
+        fs::write(
+            &script_path,
+            "#!/bin/sh\necho 'connection refused' >&2\nexit 255\n",
+        )
+        .expect("failed to write fake SSH script");
+        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
+            .expect("failed to make fake SSH script executable");
+        let result = connect_and_run(&script_path, &[], Duration::from_secs(1), "secret").await;
+
+        fs::remove_file(&script_path).expect("failed to remove fake SSH script");
+        let error = result.expect_err("the fake SSH process should fail");
+        assert!(error.to_string().contains("connection refused"));
+        assert!(error.to_string().contains("exit status: 255"));
     }
 }
