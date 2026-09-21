@@ -132,6 +132,7 @@ impl Fixture {
             "1s".into(),
             "--attempt-timeout".into(),
             "10s".into(),
+            "--once".into(),
         ]
     }
 }
@@ -234,6 +235,7 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
         ("REMOTE_LUKS_INTERVAL", "1s"),
         ("REMOTE_LUKS_ATTEMPT_TIMEOUT", "10s"),
+        ("REMOTE_LUKS_ONCE", "true"),
         ("REMOTE_LUKS_COMMAND", "unlock-luks unlock"),
     ];
     let result = Fixture::run_cli(&[], &environment).expect("polling client timed out");
