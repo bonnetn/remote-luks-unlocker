@@ -125,11 +125,7 @@ struct Args {
     connect_timeout: Duration,
 
     /// Remote command to run after authentication.
-    #[arg(
-        long,
-        env = "REMOTE_LUKS_COMMAND",
-        default_value = "unlock-luks unlock"
-    )]
+    #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "cryptroot-unlock")]
     command: String,
 }
 
@@ -453,7 +449,7 @@ mod tests {
             max_runtime: None,
             attempt_timeout: Duration::from_secs(7),
             connect_timeout: Duration::from_secs(2),
-            command: "unlock-luks unlock".to_owned(),
+            command: "cryptroot-unlock".to_owned(),
         }
     }
 
@@ -497,7 +493,7 @@ mod tests {
                 "-o",
                 "ProxyJump=none",
                 "root@example.test",
-                "unlock-luks unlock",
+                "cryptroot-unlock",
             ]
         );
     }
@@ -598,7 +594,7 @@ mod tests {
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
         assert_eq!(args.connect_timeout, Duration::from_secs(2));
-        assert_eq!(args.command, "unlock-luks unlock");
+        assert_eq!(args.command, "cryptroot-unlock");
     }
 
     #[test]

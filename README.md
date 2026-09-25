@@ -117,8 +117,8 @@ remote-luks-unlocker \
   --max-runtime 10m
 ```
 
-The default command is `unlock-luks unlock`. For Debian or Ubuntu
-`dropbear-initramfs`, use `--command cryptroot-unlock`.
+The default command is `cryptroot-unlock`. Use `--command` to select a
+different remote unlock command.
 
 ## Server setup
 
@@ -157,7 +157,7 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
-| `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` | Remote command to run |
+| `--command` | `REMOTE_LUKS_COMMAND` | `cryptroot-unlock` | Remote command to run |
 | `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
 | `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Wait after success before running the command again |
 | `--once` | `REMOTE_LUKS_ONCE` | not set | Exit after the first successful unlock |
