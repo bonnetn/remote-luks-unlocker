@@ -71,9 +71,10 @@ struct Args {
     #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
     identity_file: PathBuf,
 
-    /// `known_hosts` file used to verify the remote host key.
+    /// Optional `known_hosts` file used to verify the remote host key. When omitted,
+    /// OpenSSH uses its normal known-hosts files.
     #[arg(long, env = "REMOTE_LUKS_KNOWN_HOSTS")]
-    known_hosts: PathBuf,
+    known_hosts: Option<PathBuf>,
 
     /// Delay after a failed SSH attempt before retrying, such as `1s` or `1m`.
     #[arg(
@@ -387,11 +388,15 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     arguments.extend([
         OsString::from("-o"),
         OsString::from("StrictHostKeyChecking=yes"),
-        OsString::from("-o"),
-        path_option("UserKnownHostsFile", &args.known_hosts),
-        OsString::from("-o"),
-        OsString::from("GlobalKnownHostsFile=/dev/null"),
     ]);
+    if let Some(known_hosts) = &args.known_hosts {
+        arguments.extend([
+            OsString::from("-o"),
+            path_option("UserKnownHostsFile", known_hosts),
+            OsString::from("-o"),
+            OsString::from("GlobalKnownHostsFile=/dev/null"),
+        ]);
+    }
     arguments.extend([
         OsString::from("-i"),
         args.identity_file.clone().into_os_string(),
@@ -441,7 +446,7 @@ mod tests {
             user: "root".to_owned(),
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
-            known_hosts: PathBuf::from("/tmp/known_hosts"),
+            known_hosts: Some(PathBuf::from("/tmp/known_hosts")),
             failure_interval: Duration::from_secs(3),
             success_interval: Duration::from_secs(60),
             once: false,
@@ -498,10 +503,29 @@ mod tests {
     }
 
     #[test]
+    fn uses_openssh_known_hosts_defaults_when_not_configured() {
+        let mut args = test_args();
+        args.known_hosts = None;
+
+        let arguments = build_ssh_arguments(&args);
+
+        assert!(arguments.iter().all(|argument| {
+            !argument
+                .to_string_lossy()
+                .starts_with("UserKnownHostsFile=")
+        }));
+        assert!(
+            arguments
+                .iter()
+                .all(|argument| argument != "GlobalKnownHostsFile=/dev/null")
+        );
+    }
+
+    #[test]
     fn builds_public_key_and_known_hosts_arguments() {
         let mut args = test_args();
         args.identity_file = PathBuf::from("/tmp/id_ed25519");
-        args.known_hosts = PathBuf::from("/tmp/known_hosts");
+        args.known_hosts = Some(PathBuf::from("/tmp/known_hosts"));
 
         let arguments = build_ssh_arguments(&args);
 
@@ -568,7 +592,7 @@ mod tests {
         assert_eq!(args.attempt_timeout, Duration::from_secs(30));
         assert_eq!(args.port, 2222);
         assert_eq!(args.user, "root");
-        assert_eq!(args.known_hosts, PathBuf::from("/tmp/known_hosts"));
+        assert_eq!(args.known_hosts, Some(PathBuf::from("/tmp/known_hosts")));
         assert!(!args.once);
         assert_eq!(args.failure_interval, Duration::from_secs(1));
         assert_eq!(args.success_interval, Duration::from_secs(60));

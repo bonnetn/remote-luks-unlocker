@@ -155,7 +155,7 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--port` | `REMOTE_LUKS_PORT` | `22` | SSH port |
 | `--user` | `REMOTE_LUKS_USER` | required | SSH username |
 | `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
-| `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | required | File used to verify the server key |
+| `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `unlock-luks unlock` | Remote command to run |
 | `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
