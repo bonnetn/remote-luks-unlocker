@@ -127,6 +127,10 @@ struct Args {
     /// Remote command to run after authentication.
     #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "cryptroot-unlock")]
     command: String,
+
+    /// Increase OpenSSH diagnostics; repeat for more detail (`-v`, `-vv`, or `-vvv`).
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    verbose: u8,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -411,6 +415,10 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         OsString::from("-o"),
         OsString::from("ProxyJump=none"),
     ]);
+    arguments.extend(std::iter::repeat_n(
+        OsString::from("-v"),
+        args.verbose as usize,
+    ));
     arguments.extend([target, OsString::from(args.command.clone())]);
     arguments
 }
@@ -450,6 +458,7 @@ mod tests {
             attempt_timeout: Duration::from_secs(7),
             connect_timeout: Duration::from_secs(2),
             command: "cryptroot-unlock".to_owned(),
+            verbose: 0,
         }
     }
 
