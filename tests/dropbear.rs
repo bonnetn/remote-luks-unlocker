@@ -238,7 +238,7 @@ fn all_options_from_environment() {
         ("REMOTE_LUKS_HOST", "127.0.0.1"),
         ("REMOTE_LUKS_PORT", port.as_str()),
         ("REMOTE_LUKS_USER", "root"),
-        ("REMOTE_LUKS_LUKS_PASSWORD", PASSWORD),
+        ("REMOTE_LUKS_PASSWORD", PASSWORD),
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),
         ("REMOTE_LUKS_FAILURE_INTERVAL", "1s"),

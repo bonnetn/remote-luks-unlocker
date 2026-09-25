@@ -42,7 +42,7 @@ remote-luks-unlocker \
   --identity-file "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
-  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD"
+  --luks-password "$REMOTE_LUKS_PASSWORD"
 ```
 
 Or run the published container:
@@ -58,7 +58,7 @@ podman run --rm \
   -e REMOTE_LUKS_IDENTITY_FILE=/run/ssh/id_ed25519 \
   -e REMOTE_LUKS_KNOWN_HOSTS=/run/ssh/known_hosts \
   -e REMOTE_LUKS_COMMAND=cryptroot-unlock \
-  -e REMOTE_LUKS_LUKS_PASSWORD \
+  -e REMOTE_LUKS_PASSWORD \
   ghcr.io/bonnetn/remote-luks-unlocker
 ```
 
@@ -90,7 +90,7 @@ remote-luks-unlocker \
   --identity-file "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
-  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD"
+  --luks-password "$REMOTE_LUKS_PASSWORD"
 ```
 
 It keeps trying while SSH is unavailable. When SSH comes up, it authenticates,
@@ -112,7 +112,7 @@ remote-luks-unlocker \
   --user root \
   --identity-file "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
-  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD" \
+  --luks-password "$REMOTE_LUKS_PASSWORD" \
   --once \
   --max-runtime 10m
 ```
@@ -156,7 +156,7 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--user` | `REMOTE_LUKS_USER` | required | SSH username |
 | `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
-| `--luks-password` | `REMOTE_LUKS_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
+| `--luks-password` | `REMOTE_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `cryptroot-unlock` | Remote command to run |
 | `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
 | `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Wait after success before running the command again |

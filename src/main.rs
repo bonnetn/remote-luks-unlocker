@@ -64,7 +64,7 @@ struct Args {
     user: String,
 
     /// Passphrase sent to the remote unlock command.
-    #[arg(long, env = "REMOTE_LUKS_LUKS_PASSWORD", hide_env_values = true)]
+    #[arg(long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
     luks_password: String,
 
     /// Required private SSH identity file whose public key is authorized on the server.

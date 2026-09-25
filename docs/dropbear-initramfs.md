@@ -136,7 +136,7 @@ remote-luks-unlocker \
   --identity-file "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
-  --luks-password "$REMOTE_LUKS_LUKS_PASSWORD"
+  --luks-password "$REMOTE_LUKS_PASSWORD"
 ```
 
 The client does not choose the encrypted device. `cryptroot-unlock` delegates
