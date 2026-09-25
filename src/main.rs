@@ -270,21 +270,6 @@ async fn connect_and_run(
                 )));
             }
         }
-        match timeout_at(deadline, stdin.write_all(b"\n")).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                terminate_child(&mut child).await;
-                return Err(AttemptError::Fatal(
-                    anyhow!(error).context("failed to terminate LUKS passphrase input"),
-                ));
-            }
-            Err(_) => {
-                terminate_child(&mut child).await;
-                return Err(AttemptError::Fatal(anyhow!(
-                    "SSH attempt exceeded {attempt_timeout:?}"
-                )));
-            }
-        }
     }
 
     let mut stderr = child
