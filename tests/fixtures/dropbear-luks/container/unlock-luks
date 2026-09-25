@@ -13,7 +13,7 @@ case "${1:-status}" in
             echo UNLOCKED
             exit 0
         fi
-        IFS= read -r passphrase
+        passphrase=$(cat)
         if [ "$passphrase" != "$expected_passphrase" ]; then
             echo "invalid unlock password" >&2
             exit 1

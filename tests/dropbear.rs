@@ -193,6 +193,8 @@ fn public_key_authentication_with_host_key_verification() {
         PASSWORD.into(),
         "--known-hosts".into(),
         fixture.known_hosts_file().to_string_lossy().into_owned(),
+        "--command".into(),
+        "unlock-luks unlock".into(),
     ]);
     let result = Fixture::run_cli(&args, &[]).expect("polling client timed out");
     assert!(
