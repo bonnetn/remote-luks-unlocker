@@ -316,11 +316,8 @@ async fn connect_and_run(
         let stderr =
             str::from_utf8(&stderr).map_or("SSH produced invalid UTF-8 on stderr", str::trim);
         let escaped_stderr = stderr.escape_debug().to_string();
-        let rendered_stderr_truncated = escaped_stderr.len() > MAX_STDERR_BYTES;
-        let stderr = escaped_stderr
-            .chars()
-            .take(MAX_STDERR_BYTES)
-            .collect::<String>();
+        let (stderr, rendered_stderr_truncated) =
+            truncate_with_tail(&escaped_stderr, MAX_STDERR_BYTES);
         let stderr = if stderr_truncated || rendered_stderr_truncated {
             format!("{stderr} [stderr truncated]")
         } else {
@@ -344,21 +341,49 @@ async fn connect_and_run(
     }
 }
 
+fn truncate_with_tail(value: &str, limit: usize) -> (String, bool) {
+    let characters = value.chars().collect::<Vec<_>>();
+    if characters.len() <= limit {
+        return (value.to_owned(), false);
+    }
+
+    let head_length = limit / 2;
+    let tail_length = limit - head_length;
+    let mut truncated = String::with_capacity(limit);
+    truncated.extend(&characters[..head_length]);
+    truncated.extend(&characters[characters.len() - tail_length..]);
+    (truncated, true)
+}
+
 async fn read_stderr(reader: &mut (impl AsyncRead + Unpin)) -> std::io::Result<(Vec<u8>, bool)> {
-    let mut output = Vec::with_capacity(MAX_STDERR_BYTES.min(8 * 1024));
+    let head_limit = MAX_STDERR_BYTES / 2;
+    let tail_limit = MAX_STDERR_BYTES - head_limit;
+    let mut head = Vec::with_capacity(head_limit);
+    let mut tail = Vec::with_capacity(tail_limit);
     let mut buffer = [0_u8; 8 * 1024];
     let mut truncated = false;
 
     loop {
         let bytes_read = reader.read(&mut buffer).await?;
         if bytes_read == 0 {
-            return Ok((output, truncated));
+            head.extend_from_slice(&tail);
+            return Ok((head, truncated));
         }
 
-        let remaining = MAX_STDERR_BYTES.saturating_sub(output.len());
-        let bytes_to_keep = remaining.min(bytes_read);
-        output.extend_from_slice(&buffer[..bytes_to_keep]);
-        truncated |= bytes_to_keep < bytes_read;
+        let mut remaining = &buffer[..bytes_read];
+        if head.len() < head_limit {
+            let bytes_to_keep = (head_limit - head.len()).min(remaining.len());
+            head.extend_from_slice(&remaining[..bytes_to_keep]);
+            remaining = &remaining[bytes_to_keep..];
+        }
+        if !remaining.is_empty() {
+            truncated = true;
+            tail.extend_from_slice(remaining);
+            if tail.len() > tail_limit {
+                let excess = tail.len() - tail_limit;
+                tail.drain(..excess);
+            }
+        }
     }
 }
 
@@ -772,7 +797,7 @@ mod tests {
         ));
         fs::write(
             &script_path,
-            "#!/bin/sh\ncat >/dev/null\nyes x | head -c 32768 >&2\nexit 1\n",
+            "#!/bin/sh\ncat >/dev/null\nprintf 'stderr-start\\n' >&2\nyes x | head -c 32768 >&2\nprintf '\\nstderr-end\\n' >&2\nexit 1\n",
         )
         .expect("failed to write fake SSH script");
         fs::set_permissions(&script_path, fs::Permissions::from_mode(0o700))
@@ -784,6 +809,8 @@ mod tests {
             .expect_err("the fake SSH process should return a failure")
             .to_string();
         assert!(error.contains("stderr truncated"));
+        assert!(error.contains("stderr-start"));
+        assert!(error.contains("stderr-end"));
         assert!(error.len() < 20_000);
     }
 
