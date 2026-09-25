@@ -399,7 +399,6 @@ async fn terminate_child(child: &mut tokio::process::Child) {
 fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     let target = OsString::from(format!("{}@{}", args.user, args.host));
     let mut arguments = vec![
-        OsString::from("-tt"),
         OsString::from("-p"),
         OsString::from(args.port.to_string()),
         OsString::from("-o"),
@@ -495,7 +494,6 @@ mod tests {
         assert_eq!(
             arguments,
             [
-                "-tt",
                 "-p",
                 "2222",
                 "-o",
