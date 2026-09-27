@@ -4,7 +4,7 @@
 .SH NAME
 remote\-luks\-unlocker \- Poll an SSH endpoint and run a LUKS unlock command
 .SH SYNOPSIS
-\fBremote\-luks\-unlocker\fR [\fB\-p \fR] <\fB\-\-luks\-password\fR> <\fB\-i \fR> [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-B \fR] [\fB\-b \fR] [\fB\-C \fR] [\fB\-c \fR] [\fB\-F \fR] [\fB\-I \fR] [\fB\-J \fR] [\fB\-m \fR] [\fB\-P \fR] [\fB\-\-known\-hosts\fR] [\fB\-\-failure\-interval\fR] [\fB\-\-success\-interval\fR] [\fB\-\-once\fR] [\fB\-\-max\-runtime\fR] [\fB\-\-attempt\-timeout\fR] [\fB\-\-connect\-timeout\fR] [\fB\-\-command\fR] [\fB\-v \fR]... [\fB\-h\fR|\fB\-\-help\fR] <\fIDESTINATION\fR> 
+\fBremote\-luks\-unlocker\fR [\fB\-p \fR] <\fB\-\-luks\-password\fR> [\fB\-i \fR] [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-B \fR] [\fB\-b \fR] [\fB\-C \fR] [\fB\-c \fR] [\fB\-F \fR] [\fB\-I \fR] [\fB\-J \fR] [\fB\-m \fR] [\fB\-P \fR] [\fB\-\-known\-hosts\fR] [\fB\-\-failure\-interval\fR] [\fB\-\-success\-interval\fR] [\fB\-\-once\fR] [\fB\-\-max\-runtime\fR] [\fB\-\-attempt\-timeout\fR] [\fB\-\-connect\-timeout\fR] [\fB\-\-command\fR] [\fB\-v \fR]... [\fB\-h\fR|\fB\-\-help\fR] <\fIDESTINATION\fR> 
 .SH DESCRIPTION
 Poll an SSH endpoint and run a LUKS unlock command
 .SH OPTIONS
@@ -22,7 +22,7 @@ May also be specified with the \fBREMOTE_LUKS_PASSWORD\fR environment variable.
 .RE
 .TP
 \fB\-i\fR \fI<IDENTITY_FILE>\fR
-Required private SSH identity file whose public key is authorized on the server
+Private SSH identity file whose public key is authorized on the server
 .RS
 May also be specified with the \fBREMOTE_LUKS_IDENTITY_FILE\fR environment variable. 
 .RE
