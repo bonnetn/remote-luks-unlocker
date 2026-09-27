@@ -49,9 +49,9 @@ pub struct Args {
     #[arg(long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
     pub luks_password: String,
 
-    /// Required private SSH identity file whose public key is authorized on the server.
+    /// Private SSH identity file whose public key is authorized on the server.
     #[arg(short = 'i', env = "REMOTE_LUKS_IDENTITY_FILE")]
-    pub identity_file: PathBuf,
+    pub identity_file: Option<PathBuf>,
 
     /// Force IPv4 address resolution.
     #[arg(short = '4', env = "REMOTE_LUKS_IPV4", conflicts_with = "ipv6")]

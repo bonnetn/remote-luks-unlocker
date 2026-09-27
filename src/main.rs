@@ -309,9 +309,10 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     if let Some(config_tag) = &args.config_tag {
         arguments.extend([OsString::from("-P"), OsString::from(config_tag)]);
     }
+    if let Some(identity_file) = &args.identity_file {
+        arguments.extend([OsString::from("-i"), identity_file.clone().into_os_string()]);
+    }
     arguments.extend([
-        OsString::from("-i"),
-        args.identity_file.clone().into_os_string(),
         OsString::from("-p"),
         OsString::from(args.port.to_string()),
         OsString::from("-o"),
@@ -381,7 +382,7 @@ mod tests {
             destination: "root@example.test".to_owned(),
             port: 2222,
             luks_password: "secret".to_owned(),
-            identity_file: PathBuf::from("/tmp/id_ed25519"),
+            identity_file: Some(PathBuf::from("/tmp/id_ed25519")),
             ipv4: false,
             ipv6: false,
             bind_interface: None,
@@ -468,7 +469,7 @@ mod tests {
     #[test]
     fn builds_public_key_and_known_hosts_arguments() {
         let mut args = test_args();
-        args.identity_file = PathBuf::from("/tmp/id_ed25519");
+        args.identity_file = Some(PathBuf::from("/tmp/id_ed25519"));
         args.known_hosts = Some(PathBuf::from("/tmp/known_hosts"));
 
         let arguments = build_ssh_arguments(&args);
@@ -504,7 +505,7 @@ mod tests {
     fn preserves_non_utf8_identity_paths() {
         let mut args = test_args();
         let identity_file = OsString::from_vec(vec![b'/', b't', b'm', b'p', b'/', 0x80]);
-        args.identity_file = PathBuf::from(&identity_file);
+        args.identity_file = Some(PathBuf::from(&identity_file));
 
         let arguments = build_ssh_arguments(&args);
         let identity_index = arguments
@@ -637,6 +638,21 @@ mod tests {
         assert!(args.once);
         assert_eq!(args.max_runtime, Some(Duration::from_secs(600)));
         assert_eq!(args.success_interval, Duration::from_secs(120));
+    }
+
+    #[test]
+    fn allows_open_ssh_identity_defaults() {
+        let args = Args::try_parse_from([
+            "remote-luks-unlocker",
+            "root@example.test",
+            "--luks-password",
+            "secret",
+        ])
+        .expect("identity file should be optional");
+
+        assert_eq!(args.identity_file, None);
+        let arguments = build_ssh_arguments(&args);
+        assert!(!arguments.iter().any(|argument| argument == "-i"));
     }
 
     #[tokio::test(flavor = "current_thread")]
