@@ -63,6 +63,11 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check generated man page
+        run: |
+          cargo run --locked --bin generate-man
+          git diff --exit-code -- man/remote-luks-unlocker.1
+
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 

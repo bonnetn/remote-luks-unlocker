@@ -9,11 +9,12 @@ repository = "https://github.com/bonnetn/remote-luks-unlocker"
 readme = "README.md"
 keywords = ["ssh", "luks", "dropbear", "initramfs", "disk-encryption"]
 categories = ["command-line-utilities", "network-programming"]
-include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "docs/**", "LICENSE"]
+include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "docs/**", "man/**", "LICENSE"]
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+clap_mangen = "0.2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

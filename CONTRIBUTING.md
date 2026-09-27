@@ -22,6 +22,17 @@ Run the focused and integration tests with:
 cargo test
 ```
 
+## Man page
+
+The man page is generated from the Clap command definition. Regenerate it
+after changing CLI arguments:
+
+```sh
+cargo run --locked --bin generate-man
+```
+
+CI verifies that the committed `man/remote-luks-unlocker.1` is up to date.
+
 The integration suite under `tests/dropbear.rs` uses the rootless Podman
 fixture in `tests/fixtures/dropbear-luks/`. It creates isolated data and
 container names, verifies password delivery to the dummy unlock command, tests
