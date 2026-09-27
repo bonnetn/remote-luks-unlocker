@@ -155,6 +155,17 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `-p` | `REMOTE_LUKS_PORT` | `22` | SSH port |
 | `--user` | `REMOTE_LUKS_USER` | required | SSH username |
 | `-i` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
+| `-4` | `REMOTE_LUKS_IPV4` | not set | Force IPv4 |
+| `-6` | `REMOTE_LUKS_IPV6` | not set | Force IPv6 |
+| `-B` | `REMOTE_LUKS_BIND_INTERFACE` | not set | Bind to a network interface |
+| `-b` | `REMOTE_LUKS_BIND_ADDRESS` | not set | Bind to a local source address |
+| `-C` | `REMOTE_LUKS_COMPRESSION` | not set | Enable SSH compression |
+| `-c` | `REMOTE_LUKS_CIPHER_SPEC` | not set | Select SSH ciphers |
+| `-F` | `REMOTE_LUKS_CONFIG_FILE` | `~/.ssh/config` | Select an SSH config file |
+| `-I` | `REMOTE_LUKS_PKCS11_PROVIDER` | not set | Select a PKCS#11 provider |
+| `-J` | `REMOTE_LUKS_JUMP_HOST` | not set | Connect through a jump host |
+| `-m` | `REMOTE_LUKS_MAC_SPEC` | not set | Select SSH MAC algorithms |
+| `-P` | `REMOTE_LUKS_CONFIG_TAG` | not set | Select an SSH config tag |
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `cryptroot-unlock` | Remote command to run |
@@ -164,4 +175,4 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |
 | `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time allowed for one SSH connection and command |
 | `--connect-timeout` | `REMOTE_LUKS_CONNECT_TIMEOUT` | `2s` | Maximum time OpenSSH may spend establishing one connection |
-| `-4`, `-6`, `-B`, `-b`, `-C`, `-c`, `-F`, `-I`, `-J`, `-m`, `-P`, `-v` | — | — | OpenSSH transport and connection options |
+| `-v` | `REMOTE_LUKS_VERBOSE` | `0` | Increase OpenSSH diagnostics; repeat up to three times |

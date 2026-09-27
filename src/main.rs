@@ -73,43 +73,67 @@ struct Args {
     identity_file: PathBuf,
 
     /// Force IPv4 address resolution.
-    #[arg(short = '4', conflicts_with = "ipv6")]
+    #[arg(short = '4', env = "REMOTE_LUKS_IPV4", conflicts_with = "ipv6")]
     ipv4: bool,
 
     /// Force IPv6 address resolution.
-    #[arg(short = '6', conflicts_with = "ipv4")]
+    #[arg(short = '6', env = "REMOTE_LUKS_IPV6", conflicts_with = "ipv4")]
     ipv6: bool,
 
     /// Bind to a network interface before connecting.
-    #[arg(short = 'B', value_name = "bind_interface")]
+    #[arg(
+        short = 'B',
+        env = "REMOTE_LUKS_BIND_INTERFACE",
+        value_name = "bind_interface"
+    )]
     bind_interface: Option<String>,
 
     /// Bind to a local source address before connecting.
-    #[arg(short = 'b', value_name = "bind_address")]
+    #[arg(
+        short = 'b',
+        env = "REMOTE_LUKS_BIND_ADDRESS",
+        value_name = "bind_address"
+    )]
     bind_address: Option<String>,
 
     /// Request compression.
-    #[arg(short = 'C')]
+    #[arg(short = 'C', env = "REMOTE_LUKS_COMPRESSION")]
     compression: bool,
 
+    /// Select the cipher specification.
+    #[arg(
+        short = 'c',
+        env = "REMOTE_LUKS_CIPHER_SPEC",
+        value_name = "cipher_spec"
+    )]
+    cipher_spec: Option<String>,
+
     /// Select an alternative SSH configuration file.
-    #[arg(short = 'F', value_name = "configfile")]
+    #[arg(
+        short = 'F',
+        env = "REMOTE_LUKS_CONFIG_FILE",
+        value_name = "configfile"
+    )]
     config_file: Option<String>,
 
     /// Select a PKCS#11 provider.
-    #[arg(short = 'I', value_name = "pkcs11")]
+    #[arg(
+        short = 'I',
+        env = "REMOTE_LUKS_PKCS11_PROVIDER",
+        value_name = "pkcs11"
+    )]
     pkcs11_provider: Option<String>,
 
     /// Connect through a jump host.
-    #[arg(short = 'J', value_name = "destination")]
+    #[arg(short = 'J', env = "REMOTE_LUKS_JUMP_HOST", value_name = "destination")]
     jump_host: Option<String>,
 
     /// Select the MAC algorithms.
-    #[arg(short = 'm', value_name = "mac_spec")]
+    #[arg(short = 'm', env = "REMOTE_LUKS_MAC_SPEC", value_name = "mac_spec")]
     mac_spec: Option<String>,
 
     /// Select an SSH configuration tag.
-    #[arg(short = 'P', value_name = "tag")]
+    #[arg(short = 'P', env = "REMOTE_LUKS_CONFIG_TAG", value_name = "tag")]
     config_tag: Option<String>,
 
     /// Optional `known_hosts` file used to verify the remote host key. When omitted,
@@ -170,7 +194,11 @@ struct Args {
     command: String,
 
     /// Increase OpenSSH diagnostics; repeat for more detail (`-v`, `-vv`, or `-vvv`).
-    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    #[arg(
+        short = 'v',
+        env = "REMOTE_LUKS_VERBOSE",
+        action = clap::ArgAction::Count
+    )]
     verbose: u8,
 }
 
@@ -440,6 +468,9 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     if args.compression {
         arguments.push(OsString::from("-C"));
     }
+    if let Some(cipher_spec) = &args.cipher_spec {
+        arguments.extend([OsString::from("-c"), OsString::from(cipher_spec)]);
+    }
     if let Some(config_file) = &args.config_file {
         arguments.extend([OsString::from("-F"), OsString::from(config_file)]);
     }
@@ -533,6 +564,7 @@ mod tests {
             bind_interface: None,
             bind_address: None,
             compression: false,
+            cipher_spec: None,
             config_file: None,
             pkcs11_provider: None,
             jump_host: None,
@@ -711,6 +743,7 @@ mod tests {
         args.bind_interface = Some("en0".to_owned());
         args.bind_address = Some("192.0.2.10".to_owned());
         args.compression = true;
+        args.cipher_spec = Some("chacha20-poly1305@openssh.com".to_owned());
         args.config_file = Some("/tmp/ssh_config".to_owned());
         args.pkcs11_provider = Some("/tmp/pkcs11.so".to_owned());
         args.jump_host = Some("jump.example.test".to_owned());
@@ -727,6 +760,8 @@ mod tests {
             "-b",
             "192.0.2.10",
             "-C",
+            "-c",
+            "chacha20-poly1305@openssh.com",
             "-F",
             "/tmp/ssh_config",
             "-I",
