@@ -158,7 +158,7 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `cryptroot-unlock` | Remote command to run |
-| `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `1s` | Wait after a failed SSH attempt before retrying |
+| `--failure-interval` | `REMOTE_LUKS_FAILURE_INTERVAL` | `15s` | Wait after a failed SSH attempt before retrying |
 | `--success-interval` | `REMOTE_LUKS_SUCCESS_INTERVAL` | `1m` | Wait after success before running the command again |
 | `--once` | `REMOTE_LUKS_ONCE` | not set | Exit after the first successful unlock |
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |

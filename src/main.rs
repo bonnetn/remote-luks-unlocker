@@ -80,7 +80,7 @@ struct Args {
     #[arg(
         long,
         env = "REMOTE_LUKS_FAILURE_INTERVAL",
-        default_value = "1s",
+        default_value = "15s",
         value_parser = parse_duration
     )]
     failure_interval: Duration,
@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(args.user, "root");
         assert_eq!(args.known_hosts, Some(PathBuf::from("/tmp/known_hosts")));
         assert!(!args.once);
-        assert_eq!(args.failure_interval, Duration::from_secs(1));
+        assert_eq!(args.failure_interval, Duration::from_secs(15));
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
         assert_eq!(args.connect_timeout, Duration::from_secs(2));
