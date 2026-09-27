@@ -131,9 +131,9 @@ appears before root is unlocked. From the client:
 ```sh
 remote-luks-unlocker \
   --host server.example.com \
-  --port 2222 \
+  -p 2222 \
   --user root \
-  --identity-file "$HOME/.ssh/remote-luks" \
+  -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
   --luks-password "$REMOTE_LUKS_PASSWORD"

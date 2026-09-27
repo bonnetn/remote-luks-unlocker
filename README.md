@@ -37,9 +37,9 @@ Then run it with the server address, the SSH key, a verified initramfs
 ```sh
 remote-luks-unlocker \
   --host server.example.com \
-  --port 2222 \
+  -p 2222 \
   --user root \
-  --identity-file "$HOME/.ssh/remote-luks" \
+  -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
   --luks-password "$REMOTE_LUKS_PASSWORD"
@@ -85,9 +85,9 @@ Start the client before, or just after, rebooting the server:
 ```sh
 remote-luks-unlocker \
   --host server.example.com \
-  --port 2222 \
+  -p 2222 \
   --user root \
-  --identity-file "$HOME/.ssh/remote-luks" \
+  -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
   --luks-password "$REMOTE_LUKS_PASSWORD"
@@ -110,7 +110,7 @@ success when the unlock completes and a nonzero status if the timeout expires:
 remote-luks-unlocker \
   --host server.example.com \
   --user root \
-  --identity-file "$HOME/.ssh/remote-luks" \
+  -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --luks-password "$REMOTE_LUKS_PASSWORD" \
   --once \
@@ -152,9 +152,9 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | Option | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `--host` | `REMOTE_LUKS_HOST` | required | Server hostname or IP address |
-| `--port` | `REMOTE_LUKS_PORT` | `22` | SSH port |
+| `-p` | `REMOTE_LUKS_PORT` | `22` | SSH port |
 | `--user` | `REMOTE_LUKS_USER` | required | SSH username |
-| `--identity-file` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
+| `-i` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
 | `--known-hosts` | `REMOTE_LUKS_KNOWN_HOSTS` | OpenSSH default | Optional file used to verify the server key |
 | `--luks-password` | `REMOTE_LUKS_PASSWORD` | required | Passphrase sent to the unlock command |
 | `--command` | `REMOTE_LUKS_COMMAND` | `cryptroot-unlock` | Remote command to run |
@@ -164,4 +164,4 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | `--max-runtime` | `REMOTE_LUKS_MAX_RUNTIME` | unlimited | Total time to keep trying before exiting with an error |
 | `--attempt-timeout` | `REMOTE_LUKS_ATTEMPT_TIMEOUT` | `30s` | Maximum time allowed for one SSH connection and command |
 | `--connect-timeout` | `REMOTE_LUKS_CONNECT_TIMEOUT` | `2s` | Maximum time OpenSSH may spend establishing one connection |
-| `-v` / `--verbose` | — | `0` | Increase OpenSSH diagnostics; repeat up to three times |
+| `-4`, `-6`, `-B`, `-b`, `-C`, `-c`, `-F`, `-I`, `-J`, `-m`, `-P`, `-v` | — | — | OpenSSH transport and connection options |

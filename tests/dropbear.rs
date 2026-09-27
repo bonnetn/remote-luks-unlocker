@@ -122,11 +122,11 @@ impl Fixture {
         vec![
             "--host".into(),
             "127.0.0.1".into(),
-            "--port".into(),
+            "-p".into(),
             self.port.to_string(),
             "--user".into(),
             "root".into(),
-            "--identity-file".into(),
+            "-i".into(),
             self.identity_file().to_string_lossy().into_owned(),
             "--failure-interval".into(),
             "1s".into(),
@@ -271,7 +271,7 @@ fn mismatched_host_key_is_rejected() {
     args.extend([
         "--luks-password".into(),
         PASSWORD.into(),
-        "--identity-file".into(),
+        "-i".into(),
         fixture.identity_file().to_string_lossy().into_owned(),
         "--known-hosts".into(),
         wrong_known_hosts.to_string_lossy().into_owned(),

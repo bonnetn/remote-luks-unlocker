@@ -45,6 +45,7 @@ fn parse_duration(value: &str) -> std::result::Result<Duration, String> {
 }
 
 #[derive(Parser)]
+#[allow(clippy::struct_excessive_bools)]
 #[command(
     author,
     version,
@@ -56,7 +57,7 @@ struct Args {
     host: String,
 
     /// SSH port.
-    #[arg(short = 'p', long, env = "REMOTE_LUKS_PORT", default_value_t = 22)]
+    #[arg(short = 'p', env = "REMOTE_LUKS_PORT", default_value_t = 22)]
     port: u16,
 
     /// SSH username.
@@ -68,8 +69,48 @@ struct Args {
     luks_password: String,
 
     /// Required private SSH identity file whose public key is authorized on the server.
-    #[arg(short = 'i', long, env = "REMOTE_LUKS_IDENTITY_FILE")]
+    #[arg(short = 'i', env = "REMOTE_LUKS_IDENTITY_FILE")]
     identity_file: PathBuf,
+
+    /// Force IPv4 address resolution.
+    #[arg(short = '4', conflicts_with = "ipv6")]
+    ipv4: bool,
+
+    /// Force IPv6 address resolution.
+    #[arg(short = '6', conflicts_with = "ipv4")]
+    ipv6: bool,
+
+    /// Bind to a network interface before connecting.
+    #[arg(short = 'B', value_name = "bind_interface")]
+    bind_interface: Option<String>,
+
+    /// Bind to a local source address before connecting.
+    #[arg(short = 'b', value_name = "bind_address")]
+    bind_address: Option<String>,
+
+    /// Request compression.
+    #[arg(short = 'C')]
+    compression: bool,
+
+    /// Select an alternative SSH configuration file.
+    #[arg(short = 'F', value_name = "configfile")]
+    config_file: Option<String>,
+
+    /// Select a PKCS#11 provider.
+    #[arg(short = 'I', value_name = "pkcs11")]
+    pkcs11_provider: Option<String>,
+
+    /// Connect through a jump host.
+    #[arg(short = 'J', value_name = "destination")]
+    jump_host: Option<String>,
+
+    /// Select the MAC algorithms.
+    #[arg(short = 'm', value_name = "mac_spec")]
+    mac_spec: Option<String>,
+
+    /// Select an SSH configuration tag.
+    #[arg(short = 'P', value_name = "tag")]
+    config_tag: Option<String>,
 
     /// Optional `known_hosts` file used to verify the remote host key. When omitted,
     /// OpenSSH uses its normal known-hosts files.
@@ -129,7 +170,7 @@ struct Args {
     command: String,
 
     /// Increase OpenSSH diagnostics; repeat for more detail (`-v`, `-vv`, or `-vvv`).
-    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbose: u8,
 }
 
@@ -383,7 +424,40 @@ async fn terminate_child(child: &mut tokio::process::Child) {
 
 fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     let target = OsString::from(format!("{}@{}", args.user, args.host));
-    let mut arguments = vec![
+    let mut arguments = Vec::new();
+    if args.ipv4 {
+        arguments.push(OsString::from("-4"));
+    }
+    if args.ipv6 {
+        arguments.push(OsString::from("-6"));
+    }
+    if let Some(bind_interface) = &args.bind_interface {
+        arguments.extend([OsString::from("-B"), OsString::from(bind_interface)]);
+    }
+    if let Some(bind_address) = &args.bind_address {
+        arguments.extend([OsString::from("-b"), OsString::from(bind_address)]);
+    }
+    if args.compression {
+        arguments.push(OsString::from("-C"));
+    }
+    if let Some(config_file) = &args.config_file {
+        arguments.extend([OsString::from("-F"), OsString::from(config_file)]);
+    }
+    if let Some(pkcs11_provider) = &args.pkcs11_provider {
+        arguments.extend([OsString::from("-I"), OsString::from(pkcs11_provider)]);
+    }
+    if let Some(jump_host) = &args.jump_host {
+        arguments.extend([OsString::from("-J"), OsString::from(jump_host)]);
+    }
+    if let Some(mac_spec) = &args.mac_spec {
+        arguments.extend([OsString::from("-m"), OsString::from(mac_spec)]);
+    }
+    if let Some(config_tag) = &args.config_tag {
+        arguments.extend([OsString::from("-P"), OsString::from(config_tag)]);
+    }
+    arguments.extend([
+        OsString::from("-i"),
+        args.identity_file.clone().into_os_string(),
         OsString::from("-p"),
         OsString::from(args.port.to_string()),
         OsString::from("-o"),
@@ -394,7 +468,7 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         OsString::from("KbdInteractiveAuthentication=no"),
         OsString::from("-o"),
         OsString::from(format!("ConnectTimeout={}", args.connect_timeout.as_secs())),
-    ];
+    ]);
     arguments.extend([
         OsString::from("-o"),
         OsString::from("StrictHostKeyChecking=yes"),
@@ -408,8 +482,6 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         ]);
     }
     arguments.extend([
-        OsString::from("-i"),
-        args.identity_file.clone().into_os_string(),
         OsString::from("-o"),
         OsString::from("PreferredAuthentications=publickey"),
         OsString::from("-o"),
@@ -420,10 +492,6 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         OsString::from("ControlMaster=no"),
         OsString::from("-o"),
         OsString::from("ControlPath=none"),
-        OsString::from("-o"),
-        OsString::from("ProxyCommand=none"),
-        OsString::from("-o"),
-        OsString::from("ProxyJump=none"),
     ]);
     arguments.extend(std::iter::repeat_n(
         OsString::from("-v"),
@@ -460,6 +528,16 @@ mod tests {
             user: "root".to_owned(),
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
+            ipv4: false,
+            ipv6: false,
+            bind_interface: None,
+            bind_address: None,
+            compression: false,
+            config_file: None,
+            pkcs11_provider: None,
+            jump_host: None,
+            mac_spec: None,
+            config_tag: None,
             known_hosts: Some(PathBuf::from("/tmp/known_hosts")),
             failure_interval: Duration::from_secs(3),
             success_interval: Duration::from_secs(60),
@@ -479,6 +557,8 @@ mod tests {
         assert_eq!(
             arguments,
             [
+                "-i",
+                "/tmp/id_ed25519",
                 "-p",
                 "2222",
                 "-o",
@@ -495,8 +575,6 @@ mod tests {
                 "UserKnownHostsFile=/tmp/known_hosts",
                 "-o",
                 "GlobalKnownHostsFile=/dev/null",
-                "-i",
-                "/tmp/id_ed25519",
                 "-o",
                 "PreferredAuthentications=publickey",
                 "-o",
@@ -507,10 +585,6 @@ mod tests {
                 "ControlMaster=no",
                 "-o",
                 "ControlPath=none",
-                "-o",
-                "ProxyCommand=none",
-                "-o",
-                "ProxyJump=none",
                 "root@example.test",
                 "cryptroot-unlock",
             ]
@@ -627,6 +701,56 @@ mod tests {
             arguments
                 .iter()
                 .any(|argument| argument == "ConnectTimeout=11")
+        );
+    }
+
+    #[test]
+    fn forwards_supported_ssh_connection_options() {
+        let mut args = test_args();
+        args.ipv4 = true;
+        args.bind_interface = Some("en0".to_owned());
+        args.bind_address = Some("192.0.2.10".to_owned());
+        args.compression = true;
+        args.config_file = Some("/tmp/ssh_config".to_owned());
+        args.pkcs11_provider = Some("/tmp/pkcs11.so".to_owned());
+        args.jump_host = Some("jump.example.test".to_owned());
+        args.mac_spec = Some("hmac-sha2-256".to_owned());
+        args.config_tag = Some("prod".to_owned());
+        args.verbose = 2;
+
+        let arguments = build_ssh_arguments(&args);
+
+        for expected in [
+            "-4",
+            "-B",
+            "en0",
+            "-b",
+            "192.0.2.10",
+            "-C",
+            "-F",
+            "/tmp/ssh_config",
+            "-I",
+            "/tmp/pkcs11.so",
+            "-J",
+            "jump.example.test",
+            "-m",
+            "hmac-sha2-256",
+            "-P",
+            "prod",
+        ] {
+            assert!(arguments.iter().any(|argument| argument == expected));
+        }
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| *argument == "-v")
+                .count(),
+            2
+        );
+        assert!(
+            arguments
+                .iter()
+                .all(|argument| argument != "ProxyCommand=none" && argument != "ProxyJump=none")
         );
     }
 
