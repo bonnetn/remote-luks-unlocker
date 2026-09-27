@@ -28,7 +28,7 @@ The man page is generated from the Clap command definition. Regenerate it
 after changing CLI arguments:
 
 ```sh
-cargo run --locked --bin generate-man
+cargo run --locked --example generate-man
 ```
 
 CI verifies that the committed `man/remote-luks-unlocker.1` is up to date.

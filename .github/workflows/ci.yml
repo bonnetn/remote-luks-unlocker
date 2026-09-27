@@ -65,7 +65,7 @@ jobs:
 
       - name: Check generated man page
         run: |
-          cargo run --locked --bin generate-man
+          cargo run --locked --example generate-man
           git diff --exit-code -- man/remote-luks-unlocker.1
 
       - name: Run Clippy
