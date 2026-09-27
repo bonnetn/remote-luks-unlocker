@@ -157,7 +157,7 @@ async fn connect_and_run(
             }
             Err(_) => {
                 terminate_child(&mut child).await;
-                return Err(AttemptError::Fatal(anyhow!(
+                return Err(AttemptError::Retry(anyhow!(
                     "SSH attempt exceeded {attempt_timeout:?}"
                 )));
             }
@@ -182,7 +182,7 @@ async fn connect_and_run(
             .map_err(AttemptError::Fatal)?
     } else {
         terminate_child(&mut child).await;
-        return Err(AttemptError::Fatal(anyhow!(
+        return Err(AttemptError::Retry(anyhow!(
             "SSH attempt exceeded {attempt_timeout:?}"
         )));
     };
@@ -656,12 +656,9 @@ mod tests {
         let result = connect_and_run(&script_path, &[], Duration::from_millis(50), "secret").await;
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
-        assert!(
-            result
-                .expect_err("the fake SSH process should time out")
-                .to_string()
-                .contains("SSH attempt exceeded")
-        );
+        let error = result.expect_err("the fake SSH process should time out");
+        assert!(matches!(&error, AttemptError::Retry(_)));
+        assert!(error.to_string().contains("SSH attempt exceeded"));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -687,12 +684,9 @@ mod tests {
         .await;
 
         fs::remove_file(&script_path).expect("failed to remove fake SSH script");
-        assert!(
-            result
-                .expect_err("the fake SSH process should time out while reading stdin")
-                .to_string()
-                .contains("SSH attempt exceeded")
-        );
+        let error = result.expect_err("the fake SSH process should time out while reading stdin");
+        assert!(matches!(&error, AttemptError::Retry(_)));
+        assert!(error.to_string().contains("SSH attempt exceeded"));
     }
 
     #[tokio::test(flavor = "current_thread")]
