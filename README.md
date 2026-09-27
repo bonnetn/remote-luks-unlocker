@@ -36,9 +36,8 @@ Then run it with the server address, the SSH key, a verified initramfs
 
 ```sh
 remote-luks-unlocker \
-  --host server.example.com \
+  root@server.example.com \
   -p 2222 \
-  --user root \
   -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
@@ -52,9 +51,8 @@ podman run --rm \
   --user "$(id -u):$(id -g)" \
   -v "$HOME/.ssh/remote-luks:/run/ssh/id_ed25519:ro" \
   -v "$HOME/.config/remote-luks/known_hosts:/run/ssh/known_hosts:ro" \
-  -e REMOTE_LUKS_HOST=server.example.com \
+  -e REMOTE_LUKS_DESTINATION=root@server.example.com \
   -e REMOTE_LUKS_PORT=2222 \
-  -e REMOTE_LUKS_USER=root \
   -e REMOTE_LUKS_IDENTITY_FILE=/run/ssh/id_ed25519 \
   -e REMOTE_LUKS_KNOWN_HOSTS=/run/ssh/known_hosts \
   -e REMOTE_LUKS_COMMAND=cryptroot-unlock \
@@ -84,9 +82,8 @@ Start the client before, or just after, rebooting the server:
 
 ```sh
 remote-luks-unlocker \
-  --host server.example.com \
+  root@server.example.com \
   -p 2222 \
-  --user root \
   -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
@@ -108,8 +105,7 @@ success when the unlock completes and a nonzero status if the timeout expires:
 
 ```sh
 remote-luks-unlocker \
-  --host server.example.com \
-  --user root \
+  root@server.example.com \
   -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --luks-password "$REMOTE_LUKS_PASSWORD" \
@@ -151,9 +147,8 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 
 | Option | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
-| `--host` | `REMOTE_LUKS_HOST` | required | Server hostname or IP address |
+| `destination` | `REMOTE_LUKS_DESTINATION` | required | SSH destination in `[user@]host` form |
 | `-p` | `REMOTE_LUKS_PORT` | `22` | SSH port |
-| `--user` | `REMOTE_LUKS_USER` | required | SSH username |
 | `-i` | `REMOTE_LUKS_IDENTITY_FILE` | required | Private SSH key to use |
 | `-4` | `REMOTE_LUKS_IPV4` | not set | Force IPv4 |
 | `-6` | `REMOTE_LUKS_IPV6` | not set | Force IPv6 |

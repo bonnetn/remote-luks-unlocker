@@ -120,12 +120,9 @@ impl Fixture {
 
     fn common_args(&self) -> Vec<String> {
         vec![
-            "--host".into(),
-            "127.0.0.1".into(),
+            "root@127.0.0.1".into(),
             "-p".into(),
             self.port.to_string(),
-            "--user".into(),
-            "root".into(),
             "-i".into(),
             self.identity_file().to_string_lossy().into_owned(),
             "--failure-interval".into(),
@@ -237,9 +234,8 @@ fn all_options_from_environment() {
     let identity_file = identity_file.to_string_lossy();
     let known_hosts = known_hosts.to_string_lossy();
     let environment = [
-        ("REMOTE_LUKS_HOST", "127.0.0.1"),
+        ("REMOTE_LUKS_DESTINATION", "root@127.0.0.1"),
         ("REMOTE_LUKS_PORT", port.as_str()),
-        ("REMOTE_LUKS_USER", "root"),
         ("REMOTE_LUKS_PASSWORD", PASSWORD),
         ("REMOTE_LUKS_IDENTITY_FILE", identity_file.as_ref()),
         ("REMOTE_LUKS_KNOWN_HOSTS", known_hosts.as_ref()),

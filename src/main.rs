@@ -52,17 +52,13 @@ fn parse_duration(value: &str) -> std::result::Result<Duration, String> {
     about = "Poll an SSH endpoint and run a LUKS unlock command"
 )]
 struct Args {
-    /// Hostname or IP address of the machine running Dropbear/OpenSSH.
-    #[arg(long, env = "REMOTE_LUKS_HOST")]
-    host: String,
+    /// SSH destination in `[user@]host` form.
+    #[arg(env = "REMOTE_LUKS_DESTINATION")]
+    destination: String,
 
     /// SSH port.
     #[arg(short = 'p', env = "REMOTE_LUKS_PORT", default_value_t = 22)]
     port: u16,
-
-    /// SSH username.
-    #[arg(short = 'l', long, env = "REMOTE_LUKS_USER")]
-    user: String,
 
     /// Passphrase sent to the remote unlock command.
     #[arg(long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
@@ -206,7 +202,7 @@ struct Args {
 async fn main() -> Result<()> {
     init_tracing();
     let args = Args::parse();
-    info!(host = %args.host, port = args.port, user = %args.user, "starting SSH polling client");
+    info!(destination = %args.destination, port = args.port, "starting SSH polling client");
     let ssh = find_ssh()
         .await
         .context("OpenSSH is required but the `ssh` binary was not found")?;
@@ -451,7 +447,7 @@ async fn terminate_child(child: &mut tokio::process::Child) {
 }
 
 fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
-    let target = OsString::from(format!("{}@{}", args.user, args.host));
+    let target = OsString::from(args.destination.clone());
     let mut arguments = Vec::new();
     if args.ipv4 {
         arguments.push(OsString::from("-4"));
@@ -554,9 +550,8 @@ mod tests {
 
     fn test_args() -> Args {
         Args {
-            host: "example.test".to_owned(),
+            destination: "root@example.test".to_owned(),
             port: 2222,
-            user: "root".to_owned(),
             luks_password: "secret".to_owned(),
             identity_file: PathBuf::from("/tmp/id_ed25519"),
             ipv4: false,
@@ -695,10 +690,7 @@ mod tests {
     fn parses_attempt_timeout_default() {
         let args = Args::try_parse_from([
             "remote-luks-unlocker",
-            "--host",
-            "example.test",
-            "-l",
-            "root",
+            "root@example.test",
             "--luks-password",
             "secret",
             "-i",
@@ -712,7 +704,7 @@ mod tests {
 
         assert_eq!(args.attempt_timeout, Duration::from_secs(30));
         assert_eq!(args.port, 2222);
-        assert_eq!(args.user, "root");
+        assert_eq!(args.destination, "root@example.test");
         assert_eq!(args.known_hosts, Some(PathBuf::from("/tmp/known_hosts")));
         assert!(!args.once);
         assert_eq!(args.failure_interval, Duration::from_secs(15));
@@ -799,10 +791,7 @@ mod tests {
     fn parses_once_option() {
         let args = Args::try_parse_from([
             "remote-luks-unlocker",
-            "--host",
-            "example.test",
-            "-l",
-            "root",
+            "root@example.test",
             "--luks-password",
             "secret",
             "-i",

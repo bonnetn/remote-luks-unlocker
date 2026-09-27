@@ -130,9 +130,8 @@ appears before root is unlocked. From the client:
 
 ```sh
 remote-luks-unlocker \
-  --host server.example.com \
+  root@server.example.com \
   -p 2222 \
-  --user root \
   -i "$HOME/.ssh/remote-luks" \
   --known-hosts "$HOME/.config/remote-luks/known_hosts" \
   --command cryptroot-unlock \
