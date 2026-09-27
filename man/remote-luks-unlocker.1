@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH remote-luks-unlocker 1  "remote-luks-unlocker 0.1.8" 
+.TH remote-luks-unlocker 1  "remote-luks-unlocker " 
 .SH NAME
 remote\-luks\-unlocker \- Poll an SSH endpoint and run a LUKS unlock command
 .SH SYNOPSIS
-\fBremote\-luks\-unlocker\fR [\fB\-p \fR] <\fB\-\-luks\-password\fR> <\fB\-i \fR> [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-B \fR] [\fB\-b \fR] [\fB\-C \fR] [\fB\-c \fR] [\fB\-F \fR] [\fB\-I \fR] [\fB\-J \fR] [\fB\-m \fR] [\fB\-P \fR] [\fB\-\-known\-hosts\fR] [\fB\-\-failure\-interval\fR] [\fB\-\-success\-interval\fR] [\fB\-\-once\fR] [\fB\-\-max\-runtime\fR] [\fB\-\-attempt\-timeout\fR] [\fB\-\-connect\-timeout\fR] [\fB\-\-command\fR] [\fB\-v \fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIDESTINATION\fR> 
+\fBremote\-luks\-unlocker\fR [\fB\-p \fR] <\fB\-\-luks\-password\fR> <\fB\-i \fR> [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-B \fR] [\fB\-b \fR] [\fB\-C \fR] [\fB\-c \fR] [\fB\-F \fR] [\fB\-I \fR] [\fB\-J \fR] [\fB\-m \fR] [\fB\-P \fR] [\fB\-\-known\-hosts\fR] [\fB\-\-failure\-interval\fR] [\fB\-\-success\-interval\fR] [\fB\-\-once\fR] [\fB\-\-max\-runtime\fR] [\fB\-\-attempt\-timeout\fR] [\fB\-\-connect\-timeout\fR] [\fB\-\-command\fR] [\fB\-v \fR]... [\fB\-h\fR|\fB\-\-help\fR] <\fIDESTINATION\fR> 
 .SH DESCRIPTION
 Poll an SSH endpoint and run a LUKS unlock command
 .SH OPTIONS
@@ -150,13 +150,8 @@ May also be specified with the \fBREMOTE_LUKS_VERBOSE\fR environment variable.
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .TP
-\fB\-V\fR, \fB\-\-version\fR
-Print version
-.TP
 <\fIDESTINATION\fR>
 SSH destination in `[user@]host` form
 .RS
 May also be specified with the \fBREMOTE_LUKS_DESTINATION\fR environment variable. 
 .RE
-.SH VERSION
-v0.1.8

@@ -14,5 +14,6 @@ fn main() -> std::io::Result<()> {
     }
 
     let mut output = File::create(output_path)?;
-    Man::new(Args::command()).render(&mut output)
+    let command = Args::command().version(None::<&str>);
+    Man::new(command).render(&mut output)
 }
