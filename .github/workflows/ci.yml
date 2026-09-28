@@ -55,7 +55,7 @@ jobs:
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@422f3094be6a0843857aa008b499caaf6bce0da8 # v1.24.0
         with:
-          version: 1.23.0
+          version: 1.24.0
 
       - name: Install cargo-deny
         run: cargo binstall --no-confirm --disable-telemetry cargo-deny@0.19.0
