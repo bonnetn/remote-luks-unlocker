@@ -64,6 +64,13 @@ make stop-test-server
 The default fixture passphrase is `test-passphrase`; set `LUKS_PASSPHRASE`
 consistently for `make test-server` and `make test-connection` to change it.
 
+## Releases
+
+The scheduled release workflow creates a patch release only when changes since
+the latest release affect the shipped client, its package metadata, user-facing
+documentation, or the container image. CI-only changes do not create a new
+release.
+
 ## Implementation notes
 
 The client uses the system OpenSSH binary through Tokio’s current-thread

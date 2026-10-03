@@ -59,12 +59,13 @@ jobs:
         id: changes
         run: |
           latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
-          if [ -z "$latest_tag" ] || ! git diff --quiet "$latest_tag..HEAD"; then
+          if [ -z "$latest_tag" ] || ! git diff --quiet "$latest_tag..HEAD" -- \
+            src/ Cargo.toml Cargo.lock README.md docs/ man/ Containerfile; then
             echo 'changed=true' >> "$GITHUB_OUTPUT"
-            echo "Changes found since ${latest_tag:-the initial commit}."
+            echo "Release-worthy changes found since ${latest_tag:-the initial commit}."
           else
             echo 'changed=false' >> "$GITHUB_OUTPUT"
-            echo "No changes found since $latest_tag; skipping release."
+            echo "No release-worthy changes found since $latest_tag; skipping release."
           fi
 
       - name: Release and publish patch version
