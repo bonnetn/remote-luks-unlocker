@@ -53,9 +53,9 @@ jobs:
           podman info
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
+        uses: cargo-bins/cargo-binstall@851112458b5f28a29e5bc14a690c3f283d9dcc6f # v1.26.2
         with:
-          version: 1.25.3
+          version: 1.26.2
 
       - name: Install cargo-deny
         run: cargo binstall --no-confirm --disable-telemetry cargo-deny@0.19.0
