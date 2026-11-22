@@ -322,9 +322,13 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
         OsString::from("NumberOfPasswordPrompts=1"),
         OsString::from("-o"),
         OsString::from("KbdInteractiveAuthentication=no"),
-        OsString::from("-o"),
-        OsString::from(format!("ConnectTimeout={}", args.connect_timeout.as_secs())),
     ]);
+    if let Some(connect_timeout) = args.connect_timeout {
+        arguments.extend([
+            OsString::from("-o"),
+            OsString::from(format!("ConnectTimeout={}", connect_timeout.as_secs())),
+        ]);
+    }
     arguments.extend([
         OsString::from("-o"),
         OsString::from("StrictHostKeyChecking=yes"),
@@ -401,7 +405,7 @@ mod tests {
             once: false,
             max_runtime: None,
             attempt_timeout: Duration::from_secs(7),
-            connect_timeout: Duration::from_secs(2),
+            connect_timeout: Some(Duration::from_secs(2)),
             command: "cryptroot-unlock".to_owned(),
             verbose: 0,
         }
@@ -540,14 +544,14 @@ mod tests {
         assert_eq!(args.failure_interval, Duration::from_secs(15));
         assert_eq!(args.success_interval, Duration::from_secs(60));
         assert_eq!(args.max_runtime, None);
-        assert_eq!(args.connect_timeout, Duration::from_secs(2));
+        assert_eq!(args.connect_timeout, None);
         assert_eq!(args.command, "cryptroot-unlock");
     }
 
     #[test]
     fn configures_connect_timeout() {
         let mut args = test_args();
-        args.connect_timeout = Duration::from_secs(11);
+        args.connect_timeout = Some(Duration::from_secs(11));
 
         let arguments = build_ssh_arguments(&args);
 
@@ -555,6 +559,20 @@ mod tests {
             arguments
                 .iter()
                 .any(|argument| argument == "ConnectTimeout=11")
+        );
+    }
+
+    #[test]
+    fn preserves_openssh_connect_timeout_when_not_configured() {
+        let mut args = test_args();
+        args.connect_timeout = None;
+
+        let arguments = build_ssh_arguments(&args);
+
+        assert!(
+            !arguments
+                .iter()
+                .any(|argument| { argument.to_string_lossy().starts_with("ConnectTimeout=") })
         );
     }
 

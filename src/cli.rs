@@ -161,14 +161,13 @@ pub struct Args {
     )]
     pub attempt_timeout: Duration,
 
-    /// Maximum time OpenSSH may spend establishing one connection, such as `2s` or `10s`.
+    /// Optional maximum time OpenSSH may spend establishing one connection, such as `2s` or `10s`.
     #[arg(
         long,
         env = "REMOTE_LUKS_CONNECT_TIMEOUT",
-        default_value = "2s",
         value_parser = parse_duration
     )]
-    pub connect_timeout: Duration,
+    pub connect_timeout: Option<Duration>,
 
     /// Remote command to run after authentication.
     #[arg(long, env = "REMOTE_LUKS_COMMAND", default_value = "cryptroot-unlock")]
