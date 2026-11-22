@@ -9,8 +9,8 @@ remote\-luks\-unlocker \- Poll an SSH endpoint and run a LUKS unlock command
 Poll an SSH endpoint and run a LUKS unlock command
 .SH OPTIONS
 .TP
-\fB\-p\fR \fI<PORT>\fR [default: 22]
-SSH port
+\fB\-p\fR \fI<PORT>\fR
+Optional SSH port. When omitted, OpenSSH uses its normal configuration
 .TP
 \fB\-\-luks\-password\fR \fI<LUKS_PASSWORD>\fR
 Passphrase sent to the remote unlock command

@@ -148,7 +148,7 @@ Duration values use units such as `1s`, `30s`, or `10m`.
 | Option | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `destination` | `REMOTE_LUKS_DESTINATION` | required | SSH destination in `[user@]host` form |
-| `-p` | `REMOTE_LUKS_PORT` | `22` | SSH port |
+| `-p` | `REMOTE_LUKS_PORT` | OpenSSH default/config | Optional SSH port; when omitted, OpenSSH configuration is used |
 | `-i` | `REMOTE_LUKS_IDENTITY_FILE` | OpenSSH defaults | Optional private SSH key to use |
 | `-4` | `REMOTE_LUKS_IPV4` | not set | Force IPv4 |
 | `-6` | `REMOTE_LUKS_IPV6` | not set | Force IPv6 |

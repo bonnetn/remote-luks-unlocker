@@ -29,7 +29,7 @@ const MAX_STDERR_BYTES: usize = 16 * 1024;
 async fn main() -> Result<()> {
     init_tracing();
     let args = Args::parse();
-    info!(destination = %args.destination, port = args.port, "starting SSH polling client");
+    info!(destination = %args.destination, port = ?args.port, "starting SSH polling client");
     let ssh = find_ssh()
         .await
         .context("OpenSSH is required but the `ssh` binary was not found")?;
@@ -75,7 +75,7 @@ async fn poll_until_connected(args: &Args, ssh: &Path, ssh_arguments: &[OsString
     let failure_interval = args.failure_interval;
 
     loop {
-        debug!(port = args.port, "attempting SSH authentication");
+        debug!(port = ?args.port, "attempting SSH authentication");
         let delay = match connect_and_run(
             ssh,
             ssh_arguments,
@@ -312,9 +312,10 @@ fn build_ssh_arguments(args: &Args) -> Vec<OsString> {
     if let Some(identity_file) = &args.identity_file {
         arguments.extend([OsString::from("-i"), identity_file.clone().into_os_string()]);
     }
+    if let Some(port) = args.port {
+        arguments.extend([OsString::from("-p"), OsString::from(port.to_string())]);
+    }
     arguments.extend([
-        OsString::from("-p"),
-        OsString::from(args.port.to_string()),
         OsString::from("-o"),
         OsString::from("BatchMode=yes"),
         OsString::from("-o"),
@@ -380,7 +381,7 @@ mod tests {
     fn test_args() -> Args {
         Args {
             destination: "root@example.test".to_owned(),
-            port: 2222,
+            port: Some(2222),
             luks_password: "secret".to_owned(),
             identity_file: Some(PathBuf::from("/tmp/id_ed25519")),
             ipv4: false,
@@ -532,7 +533,7 @@ mod tests {
         .expect("default CLI arguments should parse");
 
         assert_eq!(args.attempt_timeout, Duration::from_secs(30));
-        assert_eq!(args.port, 2222);
+        assert_eq!(args.port, Some(2222));
         assert_eq!(args.destination, "root@example.test");
         assert_eq!(args.known_hosts, Some(PathBuf::from("/tmp/known_hosts")));
         assert!(!args.once);
@@ -651,8 +652,21 @@ mod tests {
         .expect("identity file should be optional");
 
         assert_eq!(args.identity_file, None);
+        assert_eq!(args.port, None);
         let arguments = build_ssh_arguments(&args);
         assert!(!arguments.iter().any(|argument| argument == "-i"));
+        assert!(!arguments.iter().any(|argument| argument == "-p"));
+    }
+
+    #[test]
+    fn forwards_explicit_port_without_overriding_openssh_config() {
+        let mut args = test_args();
+        args.port = None;
+
+        let arguments = build_ssh_arguments(&args);
+
+        assert!(!arguments.iter().any(|argument| argument == "-p"));
+        assert!(!arguments.iter().any(|argument| argument == "2222"));
     }
 
     #[tokio::test(flavor = "current_thread")]

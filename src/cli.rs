@@ -41,9 +41,9 @@ pub struct Args {
     #[arg(env = "REMOTE_LUKS_DESTINATION")]
     pub destination: String,
 
-    /// SSH port.
-    #[arg(short = 'p', env = "REMOTE_LUKS_PORT", default_value_t = 22)]
-    pub port: u16,
+    /// Optional SSH port. When omitted, OpenSSH uses its normal configuration.
+    #[arg(short = 'p', env = "REMOTE_LUKS_PORT")]
+    pub port: Option<u16>,
 
     /// Passphrase sent to the remote unlock command.
     #[arg(long, env = "REMOTE_LUKS_PASSWORD", hide_env_values = true)]
