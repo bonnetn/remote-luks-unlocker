@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "network-programming"]
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "docs/**", "man/**", "LICENSE"]
 
 [dependencies]
-anyhow = "1.0.104"
+anyhow = "1.0.105"
 clap = { version = "4.6.9", features = ["derive", "env"] }
 clap_mangen = "0.3.4"
 tokio = { version = "1.54.1", features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "time"] }
